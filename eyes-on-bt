@@ -1,0 +1,1 @@
+watch -n 1 --differences  "bluetoothctl info $(cat id)|egrep -v 'Alias|Class|Paired|Trusted|UUID|Modalias'; echo;rfcomm"
