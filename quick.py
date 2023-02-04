@@ -15,7 +15,10 @@ for x in range(1, 200):
     connection.close()
     time.sleep(1)
 
-if connection.status() == obd.OBDStatus.NOT_CONNECTED:
+status = connection.status()
+
+if status == obd.OBDStatus.NOT_CONNECTED:
+    print("No connection at all. exiting!")
     sys.exit(1)
 
 for x in range(0, 5):
@@ -27,7 +30,10 @@ for x in range(0, 5):
 
 while True:
     time.sleep(2)
-    if connection.status() == obd.OBDStatus.CAR_CONNECTED:
+    c = obd.commands.RPM
+    response = connection.query(c)
+    print(response.value)
+    if status == obd.OBDStatus.CAR_CONNECTED:
         print("CAR_CONNECTED: I think I can, I think I can...")
         cmd = obd.commands.SPEED # select an OBD command (sensor)
 
@@ -42,7 +48,8 @@ while True:
         #print(response.value.to("rpm")) # user-friendly unit conversions
         print(connection.supported_commands)
 
-    if connection.status() == obd.OBDStatus.OBD_CONNECTED:
+    if status == obd.OBDStatus.OBD_CONNECTED:
         print("OBD_CONNECTED, ignition off")
         response = connection.query(obd.commands.ELM_VOLTAGE)
         print(response.value)
+        sys.exit("since ignition off, I should shutdown...TODO!")
