@@ -5,7 +5,7 @@ car_bt="0C:D9:C1:07:F7:8B"
 while true; do
 	date
 	scanfile=/dev/shm/scan-$(date -u +%Y%m%d-%H%M%S)
-	bluetoothctl --timeout 30 scan on > $scanfile
+	bluetoothctl --timeout 15 scan on > $scanfile
 	cat $scanfile | fgrep "DC:E5:5B:2A:A5:94" # my phone
 	cat $scanfile | fgrep "00:1D:A5:03:62:B2" # ELM OBDII
 	if [ $? -eq 0 ]; then
@@ -14,7 +14,7 @@ while true; do
 	cat $scanfile | fgrep "0C:D9:C1:07:F7:8B" # CR-V radio
 	if [ $? -eq 0 ]; then
 		echo "Radio ga ga"
-		rfcomm bind rfcomm0 $(cat id)
+		#rfcomm bind rfcomm0 $(cat id)
 		./quick.py
 	fi
 	sleep 1
