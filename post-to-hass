@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+set -u
+set -e
+
+# sensorpi1 post-to-hass Feb 2023
+hass_llac="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyMjYwOWJmNjNkN2I0NzgyOGE0N2MxZjMyOWQ5YjllNiIsImlhdCI6MTY3NTM1MDQ5MSwiZXhwIjoxOTkwNzEwNDkxfQ.LuL5mVAQgq2cBSwYPlvrilL_SiCuDrVeQa7J99M5hXI"
+
+sensor=$($HOME/obd/battery.py)
+hass_friendly_name="sensorpi1 PiSugar3 battery level"
+hass_name="sensorpi1_battery_percent"
+
+curl -s -X POST -H "Authorization: Bearer $hass_llac" \
+   -H "Content-Type: application/json" \
+   -d "{\"state\": \"$sensor\", \"attributes\": {\"unit_of_measurement\": \"%\", \"friendly_name\": \"$hass_friendly_name\"}}" \
+   https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
+
+sensor=$($HOME/obd/charging_status.py)
+hass_friendly_name="sensorpi1 PiSugar3 charging status"
+hass_name="sensorpi1_charging_status"
+
+curl -s -X POST -H "Authorization: Bearer $hass_llac" \
+   -H "Content-Type: application/json" \
+   -d "{\"state\": \"$sensor\", \"attributes\": {\"friendly_name\": \"$hass_friendly_name\"}}" \
+   https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
+
+sensor=$(/sbin/iwconfig wlan0 | grep ESSID | cut -d\" -f2)
+hass_friendly_name="sensorpi1 PiSugar3 wifi name"
+hass_name="sensorpi1_wifi_name"
+
+curl -s -X POST -H "Authorization: Bearer $hass_llac" \
+   -H "Content-Type: application/json" \
+   -d "{\"state\": \"$sensor\", \"attributes\": {\"friendly_name\": \"$hass_friendly_name\"}}" \
+   https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
