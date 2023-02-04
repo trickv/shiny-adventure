@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+cd $HOME/obd
+./ci
+
+./quick.py | logger -t obdquick

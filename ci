@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+cd $HOME/obd
+git pull https://github.com/trickv/shiny-adventure
+crontab crontab
