@@ -4,6 +4,9 @@ import time
 import sys
 import obd
 
+if len(sys.argv) > 1 and sys.argv[1] == "prompt":
+    input("OBD thingy ready. Press Enter to continue.")
+
 for x in range(1, 200):
     print("try {}...".format(x))
     connection = obd.OBD("/dev/rfcomm0", baudrate=9600)
