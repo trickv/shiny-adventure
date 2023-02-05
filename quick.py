@@ -3,6 +3,7 @@
 import time
 import sys
 import obd
+import subprocess
 from pisugar import *
 
 pisugar = PiSugar2()
