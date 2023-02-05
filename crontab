@@ -1,5 +1,5 @@
 @reboot $HOME/obd/onboot
 */30 * * * * $HOME/obd/ci
 
-*/5  * * * * $HOME/obd/post-to-hass
+*/1  * * * * $HOME/obd/post-to-hass
 @reboot sleep 30 && $HOME/obd/post-to-hass
