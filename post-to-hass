@@ -3,8 +3,8 @@
 set -u
 set -e
 
-# sensorpi1 post-to-hass Feb 2023
-hass_llac="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyMjYwOWJmNjNkN2I0NzgyOGE0N2MxZjMyOWQ5YjllNiIsImlhdCI6MTY3NTM1MDQ5MSwiZXhwIjoxOTkwNzEwNDkxfQ.LuL5mVAQgq2cBSwYPlvrilL_SiCuDrVeQa7J99M5hXI"
+cd $HOME/obd
+source secret.sh
 
 sensor=$($HOME/obd/battery.py)
 hass_friendly_name="sensorpi1 PiSugar3 battery level"
