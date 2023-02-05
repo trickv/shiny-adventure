@@ -3,11 +3,12 @@
 import time
 import sys
 import obd
+import pisugar
 
 if len(sys.argv) > 1 and sys.argv[1] == "prompt":
     input("OBD thingy ready. Press Enter to continue.")
 
-for x in range(1, 200):
+for x in range(1, 300):
     print("try {}...".format(x))
     connection = obd.OBD("/dev/rfcomm0", baudrate=9600)
     if connection.status() != obd.OBDStatus.NOT_CONNECTED:
@@ -18,7 +19,10 @@ for x in range(1, 200):
 status = connection.status()
 
 if status == obd.OBDStatus.NOT_CONNECTED:
-    print("No connection at all. exiting!")
+    print("No connection at all. hrmph")
+    if not pisugar.get_charging_status().value:
+        print("no power, no obd.shutting down.")
+        subprocess.run("sudo shutdown -h now", shell=True)
     sys.exit(1)
 
 for x in range(0, 5):
