@@ -3,7 +3,9 @@
 import time
 import sys
 import obd
-import pisugar
+from pisugar import *
+
+pisugar = PiSugar2()
 
 if len(sys.argv) > 1 and sys.argv[1] == "prompt":
     input("OBD thingy ready. Press Enter to continue.")
