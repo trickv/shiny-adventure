@@ -33,7 +33,7 @@ curl -s -X POST -H "Authorization: Bearer $hass_llac" \
    -d "{\"state\": \"$sensor\", \"attributes\": {\"friendly_name\": \"$hass_friendly_name\"}}" \
    https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
 
-sensor="$(git log -1 --format=%cd) $(git rev-parse --short HEAD)"
+sensor="$(TZ=America/Chicago git log --date=local -1 --format=%cd) $(git rev-parse --short HEAD)"
 hass_friendly_name="sensorpi1 git rev"
 hass_name="sensorpi1_git_rev"
 
