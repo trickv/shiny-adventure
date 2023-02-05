@@ -41,3 +41,12 @@ curl -s -X POST -H "Authorization: Bearer $hass_llac" \
    -H "Content-Type: application/json" \
    -d "{\"state\": \"$sensor\", \"attributes\": {\"friendly_name\": \"$hass_friendly_name\"}}" \
    https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
+
+sensor=$(uptime)
+hass_friendly_name="sensorpi1 uptime"
+hass_name="sensorpi1_uptime"
+
+curl -s -X POST -H "Authorization: Bearer $hass_llac" \
+   -H "Content-Type: application/json" \
+   -d "{\"state\": \"$sensor\", \"attributes\": {\"friendly_name\": \"$hass_friendly_name\"}}" \
+   https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
