@@ -32,7 +32,8 @@ for x in range(0, 5):
     print(response.value)
     time.sleep(1)
 
-while True:
+#while True:
+for x in range(0,300): # to avoid issues with instrumentation while car is simply off
     time.sleep(2)
     c = obd.commands.RPM
     response = connection.query(c)
