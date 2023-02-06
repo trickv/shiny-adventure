@@ -11,7 +11,7 @@ pisugar = PiSugar2()
 if len(sys.argv) > 1 and sys.argv[1] == "prompt":
     input("OBD thingy ready. Press Enter to continue.")
 
-for x in range(1, 300):
+for x in range(1, 50):
     print("try {}...".format(x))
     connection = obd.OBD("/dev/rfcomm0", baudrate=9600)
     if connection.status() != obd.OBDStatus.NOT_CONNECTED:
