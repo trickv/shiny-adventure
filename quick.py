@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!//usr/bin/python3 -u
 
 import time
 import sys
@@ -11,9 +11,11 @@ pisugar = PiSugar2()
 if len(sys.argv) > 1 and sys.argv[1] == "prompt":
     input("OBD thingy ready. Press Enter to continue.")
 
+obd.logger.setLevel(obd.logging.DEBUG)
+
 for x in range(1, 50):
     print("try {}...".format(x))
-    connection = obd.OBD("/dev/rfcomm0")
+    connection = obd.OBD("/dev/rfcomm0", baudrate=38400)
     if connection.status() != obd.OBDStatus.NOT_CONNECTED:
         break
     connection.close()
