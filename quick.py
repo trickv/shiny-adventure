@@ -13,7 +13,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "prompt":
 
 for x in range(1, 50):
     print("try {}...".format(x))
-    connection = obd.OBD("/dev/rfcomm0", baudrate=9600)
+    connection = obd.OBD("/dev/rfcomm0")
     if connection.status() != obd.OBDStatus.NOT_CONNECTED:
         break
     connection.close()
