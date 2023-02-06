@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
 cd $HOME/obd
-git pull https://github.com/trickv/shiny-adventure
+git pull -q https://github.com/trickv/shiny-adventure
+crontab -l | diff -u crontab -
 crontab crontab
