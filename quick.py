@@ -38,8 +38,8 @@ for x in range(0, 5):
     time.sleep(1)
 
 #while True:
-for x in range(0,300): # to avoid issues with instrumentation while car is simply off
-    time.sleep(2)
+for x in range(0,3600): # to avoid issues with instrumentation while car is simply off
+    time.sleep(1)
     c = obd.commands.RPM
     response = connection.query(c)
     print(response.value)
@@ -56,7 +56,7 @@ for x in range(0,300): # to avoid issues with instrumentation while car is simpl
         response = connection.query(c)
         print(response.value) # returns unit-bearing values thanks to Pint
         #print(response.value.to("rpm")) # user-friendly unit conversions
-        print(connection.supported_commands)
+        #print(connection.supported_commands)
 
     if status == obd.OBDStatus.OBD_CONNECTED:
         print("OBD_CONNECTED, ignition off")
