@@ -4,4 +4,4 @@ cd $HOME/obd
 
 sudo rfcomm bind rfcomm0 00:1D:A5:03:62:B2
 
-./quick.py | tee -a /dev/shm/onboot-quick.log | logger -t obdquick
+./quick.py 2>&1 | tee -a $HOME/log/onboot-quick-$(date -u +%Y%m%d-%H%M%S).log | logger -t obdquick
