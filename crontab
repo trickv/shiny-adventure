@@ -1,4 +1,3 @@
-@reboot $HOME/obd/onboot
 */30 * * * * $HOME/obd/ci
 
 */1  * * * * $HOME/obd/post-to-hass

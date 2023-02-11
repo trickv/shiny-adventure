@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+cd $(dirname $(realpath $0))
+
+diff -u obd.service /etc/systemd/system/obd.service
+if [ $? -eq 0 ]; then
+    exit
+fi
+
+echo "Installing aystemd changes..."
+sudo cp -pv obd.service /etc/systemd/system/
+
+echo "Reloading systemd"
+sudo systemctl daemon-reload
+
+echo "Enabling systemd services"
+# It seems normal for these to output an error, however they do succeed:
+sudo systemctl enable obd

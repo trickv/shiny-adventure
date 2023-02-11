@@ -4,4 +4,5 @@ cd $HOME/obd
 git pull -q https://github.com/trickv/shiny-adventure
 crontab -l | diff -u crontab -
 crontab crontab
+./systemd/install
 ./sync-data

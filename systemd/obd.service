@@ -1,0 +1,15 @@
+[Unit]
+Description=obd
+Documentation=https://github.com/trickv/shiny_adventure/
+
+[Service]
+ExecStart=/home/trick/obd/onboot
+User=trick
+Group=trick
+StandardOutput=journal
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+Alias=obd.service
