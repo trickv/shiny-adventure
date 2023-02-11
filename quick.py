@@ -37,27 +37,33 @@ for x in range(0, 5):
     print(response.value)
     time.sleep(1)
 
+
+none_counter = 0
+
 #while True:
 for x in range(0,3600): # to avoid issues with instrumentation while car is simply off
     time.sleep(1)
-    c = obd.commands.RPM
-    response = connection.query(c)
-    print(response.value)
     if status == obd.OBDStatus.CAR_CONNECTED:
         print("CAR_CONNECTED: I think I can, I think I can...")
-        cmd = obd.commands.SPEED # select an OBD command (sensor)
+        
+        response = connection.query(obd.command.SPEED)
+        if response.is_null():
+            none_counter += 1
+        else:
+            print("{}: Speed: {}".format(response.time.isoformat(), response.value))
+        
+        response = connection.query(obd.command.RPM)
+        if response.is_null():
+            none_counter += 1
+        else:
+            print("{}: RPM: {}".format(response.time.isoformat(), response.value))
 
-        response = connection.query(cmd) # send the command, and parse the response
-
-        print(response.value) # returns unit-bearing values thanks to Pint
-        print(response.value.to("mph")) # user-friendly unit conversions
-
-        c = obd.commands.RPM
-        response = connection.query(c)
-        print(response.value) # returns unit-bearing values thanks to Pint
-        #print(response.value.to("rpm")) # user-friendly unit conversions
-        #print(connection.supported_commands)
-
+        if none_counter > 10:
+            # the car is probably off now. close up shop.
+            print("pisugar charging status: {}".format(pisugar.get_charging_status().value))
+            subprocess.run("./sync-data", shell=True)
+            subprocess.run("sudo shutdown -h +15", shell=True)
+            sys.exit(0)
     if status == obd.OBDStatus.OBD_CONNECTED:
         print("OBD_CONNECTED, ignition off")
         response = connection.query(obd.commands.ELM_VOLTAGE)
