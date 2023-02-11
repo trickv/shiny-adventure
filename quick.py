@@ -30,12 +30,10 @@ if status == obd.OBDStatus.NOT_CONNECTED:
         subprocess.run("sudo shutdown -h now", shell=True)
     sys.exit(1)
 
-for x in range(0, 5):
-    response = connection.query(obd.commands.ELM_VOLTAGE)
-    print(response.value)
-    response = connection.query(obd.commands.ELM_VERSION)
-    print(response.value)
-    time.sleep(1)
+response = connection.query(obd.commands.ELM_VOLTAGE)
+print(response.value)
+response = connection.query(obd.commands.ELM_VERSION)
+print(response.value)
 
 
 none_counter = 0
