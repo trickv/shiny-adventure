@@ -62,4 +62,7 @@ for x in range(0,3600): # to avoid issues with instrumentation while car is simp
         print("OBD_CONNECTED, ignition off")
         response = connection.query(obd.commands.ELM_VOLTAGE)
         print(response.value)
+        subprocess.run("./sync-data", shell=True)
         sys.exit("since ignition off, I should shutdown...TODO!")
+
+subprocess.run("./sync-data", shell=True)
