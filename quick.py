@@ -44,7 +44,7 @@ if status == obd.OBDStatus.OBD_CONNECTED:
     job = subprocess.run("sudo systemctl list-jobs shutdown.target", shell=True, capture_output=True, encoding='utf-8')
     print(job.stdout)
     if job.stdout.find("No jobs running") >= 0:
-        print("no pending shutdown, so scheduling one now.")
+        print("fallback: no pending shutdown, so scheduling one now.")
         subprocess.run("sudo shutdown -h +15", shell=True)
     sys.exit(42)
 
