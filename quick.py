@@ -55,13 +55,13 @@ for x in range(0,3600): # to avoid issues with instrumentation while car is simp
     if status == obd.OBDStatus.CAR_CONNECTED:
         print("CAR_CONNECTED: I think I can, I think I can...")
         
-        response = connection.query(obd.command.SPEED)
+        response = connection.query(obd.commands.SPEED)
         if response.is_null():
             none_counter += 1
         else:
             print("{}: Speed: {}".format(response.time.isoformat(), response.value))
         
-        response = connection.query(obd.command.RPM)
+        response = connection.query(obd.commands.RPM)
         if response.is_null():
             none_counter += 1
         else:
