@@ -45,6 +45,7 @@ if status == obd.OBDStatus.OBD_CONNECTED:
     print("exiting now")
     # ideally i woukd check if a shutdown is pending and add one if not...
     # but that needs systemd ~251 and buster doesnt have it. :(
+    subprocess.run("sudo systemctl list-jobs shutdown.target", shell=True)
     sys.exit(42)
 
 none_counter = 0
