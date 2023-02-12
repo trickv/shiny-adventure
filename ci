@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+date
+online=0
+while [ $online -lt 60 ]; do
+    ping -c 1 -w 1 1.1.1.1
+    if [ $? -eq 0 ]; then
+        break
+    fi
+    let online=$online+1
+done
+date
+
 cd $HOME/obd
 git pull -q https://github.com/trickv/shiny-adventure
 crontab -l | diff -u crontab -
