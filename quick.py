@@ -41,11 +41,11 @@ if status == obd.OBDStatus.OBD_CONNECTED:
     print(response.value)
     time.sleep(60)
     subprocess.run("./sync-data", shell=True)
-    ("since ignition off, I should shutdown...TODO!")
-    print("exiting now")
-    # ideally i woukd check if a shutdown is pending and add one if not...
-    # but that needs systemd ~251 and buster doesnt have it. :(
-    subprocess.run("sudo systemctl list-jobs shutdown.target", shell=True)
+    job = subprocess.run("sudo systemctl list-jobs shutdown.target", shell=True, capture_output=True, encoding='utf-8')
+    print(job.stdout)
+    if job.stdout.find("No jobs running") >= 0:
+        print("no pending shutdown, so scheduling one now.")
+        subprocess.run("sudo shutdown -h +15", shell=True)
     sys.exit(42)
 
 none_counter = 0
