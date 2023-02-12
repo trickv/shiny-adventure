@@ -53,6 +53,9 @@ none_counter = 0
 #while True:
 for x in range(0,3600): # to avoid issues with instrumentation while car is simply off
     time.sleep(1)
+    if x % 10 == 0:
+        print("pisugar battery: charging={}, level={}".format(pisugar.get_charging_status().value, pisugar.get_battery_percentage().value))
+
     if status == obd.OBDStatus.CAR_CONNECTED:
         print("CAR_CONNECTED: I think I can, I think I can...")
         
