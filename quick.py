@@ -39,14 +39,18 @@ if status == obd.OBDStatus.OBD_CONNECTED:
     print("OBD_CONNECTED, ignition off")
     response = connection.query(obd.commands.ELM_VOLTAGE)
     print(response.value)
-    time.sleep(60)
+    time.sleep(60 * 7)
     subprocess.run("./sync-data", shell=True)
     job = subprocess.run("sudo systemctl list-jobs shutdown.target", shell=True, capture_output=True, encoding='utf-8')
     print(job.stdout)
-    if job.stdout.find("No jobs running") >= 0:
+    if job.stdout.find("No jobs running") >= 0: # FIXME: this is kuaile. always returns no. hrmph. timings in this branch are all a hack. should be 60s / 15m shutdown timer
         print("fallback: no pending shutdown, so scheduling one now.")
-        subprocess.run("sudo shutdown -h +15", shell=True)
+        subprocess.run("sudo shutdown -h +5", shell=True)
     sys.exit(42)
+
+# looks like the car is on!
+# kill any pending shutdown
+subprocess.run("sudo shutdown -c", shell=True)
 
 none_counter = 0
 
