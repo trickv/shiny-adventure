@@ -74,13 +74,13 @@ for x in range(0,3600): # to avoid issues with instrumentation while car is simp
         if response.is_null():
             none_counter += 1
         else:
-            print("{}: Speed: {}".format(response.time.isoformat(), response.value))
+            print("Speed: {}".format(response.value))
         
         response = connection.query(obd.commands.RPM)
         if response.is_null():
             none_counter += 1
         else:
-            print("{}: RPM: {}".format(response.time.isoformat(), response.value))
+            print("RPM: {}".format(response.value))
 
         if none_counter > 10:
             # the car is probably off now. close up shop.
