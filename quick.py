@@ -4,6 +4,7 @@ import time
 import sys
 import obd
 import subprocess
+import os.path
 from pisugar import *
 
 pisugar = PiSugar2()
@@ -39,13 +40,19 @@ if status == obd.OBDStatus.OBD_CONNECTED:
     print("OBD_CONNECTED, ignition off")
     response = connection.query(obd.commands.ELM_VOLTAGE)
     print(response.value)
-    time.sleep(60 * 7)
+    time.sleep(60)
     subprocess.run("./sync-data", shell=True)
-    job = subprocess.run("sudo systemctl list-jobs shutdown.target", shell=True, capture_output=True, encoding='utf-8')
-    print(job.stdout)
-    if job.stdout.find("No jobs running") >= 0: # FIXME: this is kuaile. always returns no. hrmph. timings in this branch are all a hack. should be 60s / 15m shutdown timer
+    # in some version of systemd, you may be able to do:
+    # sudo systemctl list-jobs shutdown.target
+    # but not here on systemd 241.
+    # and apparently on systemd 251, you can do:
+    # shutdown --show
+    # but. I'm on systemd 241 on debian buster.
+    if not os.path.isfile("/run/systemd/shutdown/scheduled"):
         print("fallback: no pending shutdown, so scheduling one now.")
-        subprocess.run("sudo shutdown -h +5", shell=True)
+        subprocess.run("sudo shutdown -h +15", shell=True)
+    else:
+        print("already a shutdown pending! :)")
     sys.exit(42)
 
 # looks like the car is on!
