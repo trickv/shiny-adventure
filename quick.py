@@ -84,6 +84,7 @@ for x in range(0,3600): # to avoid issues with instrumentation while car is simp
 
         if none_counter > 10:
             # the car is probably off now. close up shop.
+            print("Car appears to have turned off.")
             print("pisugar charging status: {}".format(pisugar.get_charging_status().value))
             subprocess.run("./sync-data", shell=True)
             subprocess.run("sudo shutdown -h +15", shell=True)
