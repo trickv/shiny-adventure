@@ -1,4 +1,4 @@
-# Installing shiny-adventure on a clean Raspberry Pi (Debian Trixie)
+# Installing obd-logger on a clean Raspberry Pi (Debian Trixie)
 
 This guide covers setting up the OBD-II car monitoring system on a fresh
 Raspberry Pi running Raspberry Pi OS based on Debian Trixie (13).
@@ -80,7 +80,7 @@ The systemd service and scripts expect the code at `$HOME/obd`:
 
 ```bash
 cd ~
-git clone https://github.com/trickv/shiny-adventure obd
+git clone https://github.com/trickv/obd-logger obd
 cd obd
 ```
 

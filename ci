@@ -12,7 +12,7 @@ done
 date
 
 cd $HOME/obd
-git pull -q https://github.com/trickv/shiny-adventure
+git pull -q https://github.com/trickv/obd-logger
 crontab -l | diff -u crontab -
 crontab crontab
 ./systemd/install

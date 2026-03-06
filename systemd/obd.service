@@ -1,6 +1,6 @@
 [Unit]
 Description=obd
-Documentation=https://github.com/trickv/shiny_adventure/
+Documentation=https://github.com/trickv/obd-logger
 
 [Service]
 ExecStart=/home/trick/obd/onboot
