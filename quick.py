@@ -68,6 +68,43 @@ for cmd, col in SENSORS:
     print(f"  {col}: {tag}")
 
 
+DTC_CHECK_INTERVAL = 300  # re-check DTCs every 5 minutes
+
+
+def check_dtcs(connection):
+    """Query and log diagnostic trouble codes."""
+    os.makedirs(LOG_DIR, exist_ok=True)
+    dtc_path = os.path.join(LOG_DIR, "dtc.log")
+
+    status_resp = connection.query(obd.commands.STATUS)
+    if not status_resp.is_null():
+        mil = status_resp.value.MIL
+        dtc_count = status_resp.value.DTC_count
+        print(f"MIL (check engine): {mil}, DTC count: {dtc_count}")
+    else:
+        mil = None
+        dtc_count = None
+        print("Could not read STATUS")
+
+    dtc_resp = connection.query(obd.commands.GET_DTC)
+    if not dtc_resp.is_null() and dtc_resp.value:
+        now = datetime.now().isoformat()
+        print(f"DTCs found: {len(dtc_resp.value)}")
+        with open(dtc_path, "a") as f:
+            for code, desc in dtc_resp.value:
+                line = f"{now}  {code}  {desc}"
+                print(f"  DTC: {code} - {desc}")
+                f.write(line + "\n")
+    else:
+        print("No DTCs")
+
+    freeze_resp = connection.query(obd.commands.FREEZE_DTC)
+    if not freeze_resp.is_null() and freeze_resp.value:
+        print(f"Freeze frame DTC: {freeze_resp.value}")
+
+    return mil, dtc_count
+
+
 def is_shutdown_pending():
     result = subprocess.run(["sudo", "shutdown", "--show"],
                             capture_output=True, text=True)
@@ -82,6 +119,9 @@ def schedule_shutdown_if_needed():
     else:
         print("already a shutdown pending!")
 
+
+# Check DTCs on connect
+check_dtcs(connection)
 
 if status == obd.OBDStatus.OBD_CONNECTED:
     print("OBD_CONNECTED, ignition off")
@@ -147,6 +187,10 @@ for x in range(0, 3600):
         csv_file.close()
         schedule_shutdown_if_needed()
         sys.exit(0)
+
+    # Re-check DTCs periodically
+    if x > 0 and x % DTC_CHECK_INTERVAL == 0:
+        check_dtcs(connection)
 
     # Flush CSV periodically so data isn't lost on unclean exit
     if x % 30 == 0:
