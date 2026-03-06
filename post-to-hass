@@ -7,8 +7,8 @@ cd $HOME/obd
 source secret.sh
 
 sensor=$($HOME/obd/battery.py)
-hass_friendly_name="sensorpi1 PiSugar3 battery level"
-hass_name="sensorpi1_battery_percent"
+hass_friendly_name="obd battery level"
+hass_name="obd_battery_percent"
 
 curl -s -X POST -H "Authorization: Bearer $hass_llac" \
    -H "Content-Type: application/json" \
@@ -16,8 +16,8 @@ curl -s -X POST -H "Authorization: Bearer $hass_llac" \
    https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
 
 sensor=$($HOME/obd/charging_status.py)
-hass_friendly_name="sensorpi1 PiSugar3 charging status"
-hass_name="sensorpi1_charging_status"
+hass_friendly_name="obd charging status"
+hass_name="obd_charging_status"
 
 curl -s -X POST -H "Authorization: Bearer $hass_llac" \
    -H "Content-Type: application/json" \
@@ -25,8 +25,8 @@ curl -s -X POST -H "Authorization: Bearer $hass_llac" \
    https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
 
 sensor=$(/sbin/iwconfig wlan0 | grep ESSID | cut -d\" -f2)
-hass_friendly_name="sensorpi1 PiSugar3 wifi name"
-hass_name="sensorpi1_wifi_name"
+hass_friendly_name="obd wifi name"
+hass_name="obd_wifi_name"
 
 curl -s -X POST -H "Authorization: Bearer $hass_llac" \
    -H "Content-Type: application/json" \
@@ -34,8 +34,8 @@ curl -s -X POST -H "Authorization: Bearer $hass_llac" \
    https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
 
 sensor="$(TZ=America/Chicago git log --date=local -1 --format=%cd) $(git rev-parse --short HEAD)"
-hass_friendly_name="sensorpi1 git rev"
-hass_name="sensorpi1_git_rev"
+hass_friendly_name="obd git rev"
+hass_name="obd_git_rev"
 
 curl -s -X POST -H "Authorization: Bearer $hass_llac" \
    -H "Content-Type: application/json" \
@@ -43,8 +43,8 @@ curl -s -X POST -H "Authorization: Bearer $hass_llac" \
    https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
 
 sensor=$(uptime)
-hass_friendly_name="sensorpi1 uptime"
-hass_name="sensorpi1_uptime"
+hass_friendly_name="obd uptime"
+hass_name="obd_uptime"
 
 curl -s -X POST -H "Authorization: Bearer $hass_llac" \
    -H "Content-Type: application/json" \
