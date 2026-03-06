@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/trick/obd/venv/bin/python3
 
 # Written by Tisboyo - 10230718+tisboyo@users.noreply.github.com
 

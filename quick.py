@@ -1,11 +1,35 @@
-#!//usr/bin/python3 -u
+#!/home/trick/obd/venv/bin/python3 -u
 
-import time
-import sys
-import obd
-import subprocess
+import csv
+import os
 import os.path
-from pisugar import *
+import subprocess
+import sys
+import time
+from datetime import datetime
+
+import obd
+from pisugar import PiSugar2
+
+# Sensors to log when the car is running.
+# Each entry is (obd command, csv column name).
+# Not all cars support all sensors — unsupported ones are silently skipped.
+SENSORS = [
+    (obd.commands.RPM, "rpm"),
+    (obd.commands.SPEED, "speed_kmh"),
+    (obd.commands.COOLANT_TEMP, "coolant_temp_c"),
+    (obd.commands.ENGINE_LOAD, "engine_load_pct"),
+    (obd.commands.THROTTLE_POS, "throttle_pct"),
+    (obd.commands.INTAKE_TEMP, "intake_temp_c"),
+    (obd.commands.MAF, "maf_gps"),
+    (obd.commands.TIMING_ADVANCE, "timing_advance_deg"),
+    (obd.commands.FUEL_LEVEL, "fuel_level_pct"),
+    (obd.commands.RUN_TIME, "run_time_sec"),
+    (obd.commands.BAROMETRIC_PRESSURE, "baro_kpa"),
+    (obd.commands.ELM_VOLTAGE, "elm_voltage"),
+]
+
+LOG_DIR = os.path.expanduser("~/log")
 
 pisugar = PiSugar2()
 
@@ -14,8 +38,8 @@ if len(sys.argv) > 1 and sys.argv[1] == "prompt":
 
 obd.logger.setLevel(obd.logging.DEBUG)
 
-for x in range(1, 50):
-    print("try {}...".format(x))
+for attempt in range(1, 50):
+    print(f"try {attempt}...")
     connection = obd.OBD("/dev/rfcomm0", baudrate=38400)
     if connection.status() != obd.OBDStatus.NOT_CONNECTED:
         break
@@ -27,68 +51,107 @@ status = connection.status()
 if status == obd.OBDStatus.NOT_CONNECTED:
     print("No connection at all. hrmph")
     if not pisugar.get_charging_status().value:
-        print("no power, no obd.shutting down.")
-        subprocess.run("sudo shutdown -h now", shell=True)
+        print("no power, no obd. shutting down.")
+        subprocess.run(["sudo", "shutdown", "-h", "now"])
     sys.exit(1)
 
 response = connection.query(obd.commands.ELM_VOLTAGE)
-print(response.value)
+print(f"ELM voltage: {response.value}")
 response = connection.query(obd.commands.ELM_VERSION)
-print(response.value)
+print(f"ELM version: {response.value}")
+
+# Print which sensors the car supports
+supported = connection.supported_commands
+print(f"Car supports {len(supported)} commands")
+for cmd, col in SENSORS:
+    tag = "OK" if cmd in supported else "not supported"
+    print(f"  {col}: {tag}")
+
+
+def is_shutdown_pending():
+    result = subprocess.run(["sudo", "shutdown", "--show"],
+                            capture_output=True, text=True)
+    return result.returncode == 0 and "Shutdown scheduled" in result.stdout
+
+
+def schedule_shutdown_if_needed():
+    subprocess.run(["./sync-data"])
+    if not is_shutdown_pending():
+        print("no pending shutdown, scheduling one in 15 minutes.")
+        subprocess.run(["sudo", "shutdown", "-h", "+15"])
+    else:
+        print("already a shutdown pending!")
+
 
 if status == obd.OBDStatus.OBD_CONNECTED:
     print("OBD_CONNECTED, ignition off")
     response = connection.query(obd.commands.ELM_VOLTAGE)
-    print(response.value)
+    print(f"ELM voltage: {response.value}")
     time.sleep(60)
-    subprocess.run("./sync-data", shell=True)
-    # in some version of systemd, you may be able to do:
-    # sudo systemctl list-jobs shutdown.target
-    # but not here on systemd 241.
-    # and apparently on systemd 251, you can do:
-    # shutdown --show
-    # but. I'm on systemd 241 on debian buster.
-    if not os.path.isfile("/run/systemd/shutdown/scheduled"):
-        print("fallback: no pending shutdown, so scheduling one now.")
-        subprocess.run("sudo shutdown -h +15", shell=True)
-    else:
-        print("already a shutdown pending! :)")
+    schedule_shutdown_if_needed()
     sys.exit(42)
 
-# looks like the car is on!
-# kill any pending shutdown
-subprocess.run("sudo shutdown -c", shell=True)
+# Car is on — cancel any pending shutdown
+subprocess.run(["sudo", "shutdown", "-c"], capture_output=True)
 
-none_counter = 0
+# Set up CSV logging
+os.makedirs(LOG_DIR, exist_ok=True)
+csv_path = os.path.join(LOG_DIR, f"obd-{datetime.now():%Y%m%d-%H%M%S}.csv")
+csv_file = open(csv_path, "w", newline="")
+csv_columns = ["timestamp"] + [col for _, col in SENSORS] + ["pisugar_charging", "pisugar_battery_pct"]
+csv_writer = csv.DictWriter(csv_file, fieldnames=csv_columns)
+csv_writer.writeheader()
+print(f"Logging to {csv_path}")
 
-#while True:
-for x in range(0,3600): # to avoid issues with instrumentation while car is simply off
+# Filter to only supported sensors
+active_sensors = [(cmd, col) for cmd, col in SENSORS if cmd in supported]
+
+consecutive_nulls = 0
+NULL_THRESHOLD = 10
+
+for x in range(0, 3600):
     time.sleep(1)
+
+    row = {"timestamp": datetime.now().isoformat()}
+    got_data = False
+
+    for cmd, col in active_sensors:
+        response = connection.query(cmd)
+        if not response.is_null():
+            val = response.value
+            row[col] = val.magnitude if hasattr(val, 'magnitude') else val
+            got_data = True
+
     if x % 10 == 0:
-        print("pisugar battery: charging={}, level={}".format(pisugar.get_charging_status().value, pisugar.get_battery_percentage().value))
+        charging = pisugar.get_charging_status().value
+        battery = pisugar.get_battery_percentage().value
+        row["pisugar_charging"] = charging
+        row["pisugar_battery_pct"] = battery
+        print(f"pisugar: charging={charging}, level={battery}")
 
-    if status == obd.OBDStatus.CAR_CONNECTED:
-        print("CAR_CONNECTED: I think I can, I think I can...")
-        
-        response = connection.query(obd.commands.SPEED)
-        if response.is_null():
-            none_counter += 1
-        else:
-            print("{}: Speed: {}".format(response.time, response.value))
-        
-        response = connection.query(obd.commands.RPM)
-        if response.is_null():
-            none_counter += 1
-        else:
-            print("{}: RPM: {}".format(response.time, response.value))
+    if got_data:
+        consecutive_nulls = 0
+        if x % 5 == 0:
+            rpm = row.get("rpm", "?")
+            speed = row.get("speed_kmh", "?")
+            coolant = row.get("coolant_temp_c", "?")
+            print(f"RPM={rpm} Speed={speed} Coolant={coolant}")
+    else:
+        consecutive_nulls += 1
 
-        if none_counter > 10:
-            # the car is probably off now. close up shop.
-            print("Car appears to have turned off.")
-            print("pisugar charging status: {}".format(pisugar.get_charging_status().value))
-            subprocess.run("./sync-data", shell=True)
-            subprocess.run("sudo shutdown -h +15", shell=True)
-            sys.exit(0)
+    csv_writer.writerow(row)
 
-# if somehow we're here, try and sync data
-subprocess.run("./sync-data", shell=True)
+    if consecutive_nulls > NULL_THRESHOLD:
+        print("Car appears to have turned off.")
+        print(f"pisugar charging: {pisugar.get_charging_status().value}")
+        csv_file.close()
+        schedule_shutdown_if_needed()
+        sys.exit(0)
+
+    # Flush CSV periodically so data isn't lost on unclean exit
+    if x % 30 == 0:
+        csv_file.flush()
+
+csv_file.close()
+# If we exit the loop (1 hour timeout), sync data
+subprocess.run(["./sync-data"])
