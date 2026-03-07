@@ -49,6 +49,7 @@ def init_db(db):
         CREATE TABLE IF NOT EXISTS readings (
             drive_id       TEXT NOT NULL,
             timestamp      TEXT NOT NULL,
+            time_unix      REAL NOT NULL,
             rpm            REAL,
             speed_kmh      REAL,
             coolant_temp_c REAL,
@@ -103,7 +104,9 @@ def import_csv(db, csv_path):
     with open(csv_path, newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            values = {"drive_id": drive_id, "timestamp": row["timestamp"]}
+            ts = row["timestamp"]
+            time_unix = datetime.fromisoformat(ts).timestamp()
+            values = {"drive_id": drive_id, "timestamp": ts, "time_unix": time_unix}
 
             for col in NUMERIC_COLUMNS:
                 raw = row.get(col, "")
