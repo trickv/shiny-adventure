@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Import OBD CSV logs into a SQLite database for Grafana.
+
+Scans a log directory for obd-*.csv files, imports new rows, and tracks
+which files have been fully imported so re-runs are idempotent.
+
+Usage:
+    ./import-to-sqlite                          # defaults
+    ./import-to-sqlite /path/to/log /path/to/db
+"""
+
+import csv
+import glob
+import os
+import sqlite3
+import sys
+
+LOG_DIR = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/docker-services/obd/log")
+DB_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(LOG_DIR, "obd.sqlite")
+
+NUMERIC_COLUMNS = [
+    "rpm", "speed_kmh", "coolant_temp_c", "engine_load_pct",
+    "throttle_pct", "intake_temp_c", "maf_gps", "timing_advance_deg",
+    "fuel_level_pct", "run_time_sec", "baro_kpa", "elm_voltage",
+    "pisugar_battery_pct",
+]
+
+
+def init_db(db):
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS readings (
+            drive_id       TEXT NOT NULL,
+            timestamp      TEXT NOT NULL,
+            rpm            REAL,
+            speed_kmh      REAL,
+            coolant_temp_c REAL,
+            engine_load_pct REAL,
+            throttle_pct   REAL,
+            intake_temp_c  REAL,
+            maf_gps        REAL,
+            timing_advance_deg REAL,
+            fuel_level_pct REAL,
+            run_time_sec   REAL,
+            baro_kpa       REAL,
+            elm_voltage    REAL,
+            pisugar_charging INTEGER,
+            pisugar_battery_pct REAL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_readings_drive ON readings(drive_id);
+        CREATE INDEX IF NOT EXISTS idx_readings_ts ON readings(timestamp);
+
+        CREATE TABLE IF NOT EXISTS drives (
+            drive_id   TEXT PRIMARY KEY,
+            filename   TEXT NOT NULL,
+            imported_at TEXT NOT NULL,
+            row_count  INTEGER NOT NULL
+        );
+    """)
+
+
+def import_csv(db, csv_path):
+    filename = os.path.basename(csv_path)
+    # drive_id is the filename without extension, e.g. "obd-20260306-164722"
+    drive_id = os.path.splitext(filename)[0]
+
+    # Check if already imported
+    existing = db.execute(
+        "SELECT row_count FROM drives WHERE drive_id = ?", (drive_id,)
+    ).fetchone()
+
+    file_rows = sum(1 for _ in open(csv_path)) - 1  # subtract header
+    if file_rows <= 0:
+        return 0
+
+    if existing and existing[0] >= file_rows:
+        return 0  # already fully imported
+
+    # Delete any partial import and re-import
+    if existing:
+        db.execute("DELETE FROM readings WHERE drive_id = ?", (drive_id,))
+        db.execute("DELETE FROM drives WHERE drive_id = ?", (drive_id,))
+
+    rows_inserted = 0
+    with open(csv_path, newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            values = {"drive_id": drive_id, "timestamp": row["timestamp"]}
+
+            for col in NUMERIC_COLUMNS:
+                raw = row.get(col, "")
+                if raw == "":
+                    values[col] = None
+                else:
+                    try:
+                        values[col] = float(raw)
+                    except ValueError:
+                        values[col] = None
+
+            # pisugar_charging: "True"/"False"/""  -> 1/0/NULL
+            charging = row.get("pisugar_charging", "")
+            if charging == "True":
+                values["pisugar_charging"] = 1
+            elif charging == "False":
+                values["pisugar_charging"] = 0
+            else:
+                values["pisugar_charging"] = None
+
+            columns = list(values.keys())
+            placeholders = ", ".join(":" + c for c in columns)
+            col_names = ", ".join(columns)
+            db.execute(f"INSERT INTO readings ({col_names}) VALUES ({placeholders})", values)
+            rows_inserted += 1
+
+    from datetime import datetime
+    db.execute(
+        "INSERT INTO drives (drive_id, filename, imported_at, row_count) VALUES (?, ?, ?, ?)",
+        (drive_id, filename, datetime.now().isoformat(), rows_inserted),
+    )
+
+    return rows_inserted
+
+
+def main():
+    db = sqlite3.connect(DB_PATH)
+    init_db(db)
+
+    csv_files = sorted(glob.glob(os.path.join(LOG_DIR, "obd-*.csv")))
+    total = 0
+    for csv_path in csv_files:
+        count = import_csv(db, csv_path)
+        if count > 0:
+            name = os.path.basename(csv_path)
+            print(f"  {name}: {count} rows")
+            total += count
+
+    db.commit()
+    db.close()
+
+    if total > 0:
+        print(f"Imported {total} rows from {len(csv_files)} file(s) into {DB_PATH}")
+    else:
+        print("Nothing new to import.")
+
+
+if __name__ == "__main__":
+    main()
