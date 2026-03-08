@@ -6,6 +6,11 @@ to Home Assistant.
 
 ## System Architecture
 
+![System Architecture](doc/architecture.svg)
+
+<details>
+<summary>Diagram source (Mermaid)</summary>
+
 ```mermaid
 graph TB
     subgraph Car
@@ -50,6 +55,8 @@ graph TB
     post -- "HTTPS<br/>when on WiFi" --> hass
     upd -- "git pull<br/>when on WiFi" --> GitHub[(GitHub)]
 ```
+
+</details>
 
 The Pi lives in the car and is **offline during drives**. Data collection and
 data processing are fully decoupled:
