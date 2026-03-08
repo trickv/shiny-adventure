@@ -74,7 +74,77 @@ sudo systemctl status pisugar-server
 
 You can also check the web UI at `http://<pi-ip>:8421`.
 
-## 5. Clone the repository
+## 5. Configure the PiSugar RTC
+
+The PiSugar has an onboard RTC (real-time clock) that keeps time while the Pi
+is off. This is critical because the Pi is offline during drives — without the
+RTC, timestamps come from `fake-hwclock` and will be wrong.
+
+### Add the RTC overlay
+
+Edit `/boot/firmware/config.txt` (or `/boot/config.txt` on older OS):
+
+```bash
+sudo nano /boot/firmware/config.txt
+```
+
+Add:
+
+```
+dtoverlay=i2c-rtc,ds3231
+```
+
+Reboot, then verify the kernel claimed the RTC:
+
+```bash
+sudo i2cdetect -y 1
+```
+
+You should see `UU` at address `0x68`.
+
+### Remove fake-hwclock
+
+`fake-hwclock` replays the last saved timestamp on boot, which conflicts with
+the real RTC:
+
+```bash
+sudo apt-get -y remove fake-hwclock
+sudo update-rc.d -f fake-hwclock remove
+sudo systemctl disable fake-hwclock
+```
+
+### Fix hwclock-set
+
+Edit `/lib/udev/hwclock-set` and comment out the systemd early-exit so the
+RTC is actually read on boot:
+
+```bash
+sudo nano /lib/udev/hwclock-set
+```
+
+Comment out these lines:
+
+```
+#if [ -e /run/systemd/system ] ; then
+# exit 0
+#fi
+```
+
+### Set the RTC time
+
+Connect to WiFi (or set manually with `sudo date -s "2026-03-08 12:00:00"`),
+then write the system time to the RTC:
+
+```bash
+sudo hwclock -w    # write system time to RTC
+sudo hwclock -r    # verify it reads back correctly
+```
+
+After this, every boot will initialize the system clock from the RTC
+automatically — no network needed. The PiSugar's onboard battery keeps the
+RTC running for over a year.
+
+## 6. Clone the repository
 
 The systemd service and scripts expect the code at `$HOME/obd`:
 
@@ -84,7 +154,7 @@ git clone https://github.com/trickv/obd-logger obd
 cd obd
 ```
 
-## 6. Unlock secrets with git-crypt
+## 7. Unlock secrets with git-crypt
 
 `secret.sh` contains the Home Assistant API token and is encrypted with
 git-crypt. You need the symmetric key to unlock it:
@@ -102,7 +172,7 @@ EOF
 chmod 600 secret.sh
 ```
 
-## 7. Python virtual environment
+## 8. Python virtual environment
 
 Debian Trixie enforces PEP 668 — you cannot `pip install` into the system
 Python. Use a venv:
@@ -117,7 +187,7 @@ pip install obd
 All Python scripts have shebangs pointing at `~/obd/venv/bin/python3`, so the
 venv is used automatically — no need to activate it before running scripts.
 
-## 8. Pair the ELM327 Bluetooth adapter
+## 9. Pair the ELM327 Bluetooth adapter
 
 Power on the ELM327 adapter (plug it into the car's OBD port and turn the
 ignition to ON).
@@ -145,7 +215,7 @@ exit
 
 The default PIN for most ELM327 adapters is `1234`.
 
-## 9. Configure sudo permissions
+## 10. Configure sudo permissions
 
 `obd-logger` calls `sudo rfcomm`, `sudo shutdown`, etc. without a password.
 Add a sudoers rule:
@@ -159,13 +229,13 @@ Add:
 trick ALL=(ALL) NOPASSWD: /usr/bin/rfcomm, /usr/sbin/shutdown
 ```
 
-## 10. Create the log directory
+## 11. Create the log directory
 
 ```bash
 mkdir -p ~/log
 ```
 
-## 11. Install the systemd service
+## 12. Install the systemd service
 
 ```bash
 cd ~/obd
@@ -175,7 +245,7 @@ cd ~/obd
 This copies `obd.service` to `/etc/systemd/system/`, reloads systemd, and
 enables the service to start on boot.
 
-## 12. Install the crontab
+## 13. Install the crontab
 
 ```bash
 crontab ~/obd/crontab
@@ -185,7 +255,7 @@ This sets up:
 - Every 1 minute: `update` script (git pull, update crontab, sync data — skips if last success was <15 min ago)
 - Every 1 minute: `post-to-hass` (report sensors to Home Assistant)
 
-## 13. Verify
+## 14. Verify
 
 ```bash
 # Check systemd service
@@ -203,7 +273,7 @@ sudo rfcomm bind rfcomm0 $(cat ~/obd/bt-addr)
 ls -l /dev/rfcomm0
 ```
 
-## 14. Reboot and go
+## 15. Reboot and go
 
 ```bash
 sudo reboot
@@ -233,7 +303,7 @@ and that `rfcomm0` is bound (`rfcomm` with no args shows bindings).
 `sudo systemctl restart pisugar-server`
 
 **`pip install` fails with "externally managed environment"** — You must use
-a venv (step 7). Do not use `--break-system-packages`.
+a venv (step 8). Do not use `--break-system-packages`.
 
 **Bluetooth pairing fails** — Some ELM327 clones need the PIN set before
 pairing: in `bluetoothctl`, run `agent on` and `default-agent` first.
