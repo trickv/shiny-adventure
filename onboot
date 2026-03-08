@@ -2,6 +2,6 @@
 
 cd $HOME/obd
 
-sudo rfcomm bind rfcomm0 $(cat id)
+sudo rfcomm bind rfcomm0 $(cat bt-addr)
 
-./quick.py 2>&1 | ts | tee -a $HOME/log/onboot-quick-$(date +%Y%m%d-%H%M%S).log | logger -t obdquick
+./obd-logger 2>&1 | ts | tee -a $HOME/log/obd-$(date +%Y%m%d-%H%M%S).log | logger -t obd-logger

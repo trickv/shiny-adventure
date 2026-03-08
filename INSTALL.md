@@ -8,7 +8,7 @@ Raspberry Pi running Raspberry Pi OS based on Debian Trixie (13).
 - Raspberry Pi (Zero, 3, 4, or 5)
 - [PiSugar2 battery module](https://www.pisugar.com/) attached to the Pi
 - ELM327 Bluetooth OBD-II adapter (this project uses MAC `00:1D:A5:03:62:B2` —
-  update `id` file if yours differs)
+  update `bt-addr` file if yours differs)
 - WiFi connectivity (for Home Assistant reporting and data sync)
 
 ## 1. Base OS setup
@@ -58,7 +58,7 @@ Reboot after enabling.
 
 ## 4. Install PiSugar Power Manager
 
-The PiSugar daemon listens on TCP port 8423 and is required by `quick.py` and
+The PiSugar daemon listens on TCP port 8423 and is required by `obd-logger` and
 the battery scripts.
 
 ```bash
@@ -134,7 +134,7 @@ default-agent
 scan on
 ```
 
-Wait for the ELM327 MAC to appear (should match the address in the `id` file:
+Wait for the ELM327 MAC to appear (should match the address in the `bt-addr` file:
 `00:1D:A5:03:62:B2`). Then:
 
 ```
@@ -147,7 +147,7 @@ The default PIN for most ELM327 adapters is `1234`.
 
 ## 9. Configure sudo permissions
 
-`quick.py` calls `sudo rfcomm`, `sudo shutdown`, etc. without a password.
+`obd-logger` calls `sudo rfcomm`, `sudo shutdown`, etc. without a password.
 Add a sudoers rule:
 
 ```bash
@@ -182,9 +182,8 @@ crontab ~/obd/crontab
 ```
 
 This sets up:
-- Every 30 minutes: `ci` script (git pull, update crontab, sync data)
+- Every 1 minute: `update` script (git pull, update crontab, sync data — skips if last success was <15 min ago)
 - Every 1 minute: `post-to-hass` (report sensors to Home Assistant)
-- On boot: both scripts with appropriate delays
 
 ## 13. Verify
 
@@ -200,7 +199,7 @@ cd ~/obd
 ./battery.py
 
 # Test Bluetooth RFCOMM binding (car must be on)
-sudo rfcomm bind rfcomm0 $(cat ~/obd/id)
+sudo rfcomm bind rfcomm0 $(cat ~/obd/bt-addr)
 ls -l /dev/rfcomm0
 ```
 
@@ -212,7 +211,7 @@ sudo reboot
 
 On boot, the `obd` systemd service will:
 1. Bind the Bluetooth RFCOMM device
-2. Start `quick.py` which connects to the OBD-II adapter
+2. Start `obd-logger` which connects to the OBD-II adapter
 3. Log sensor data to CSV files in `~/log/`
 4. Log output to syslog (viewable with `journalctl -u obd -f`)
 
@@ -220,7 +219,7 @@ On boot, the `obd` systemd service will:
 
 | File | Purpose |
 |------|---------|
-| `id` | ELM327 Bluetooth MAC address — update if your adapter differs |
+| `bt-addr` | ELM327 Bluetooth MAC address — update if your adapter differs |
 | `secret.sh` | Home Assistant API token (git-crypt encrypted) |
 | `crontab` | Cron schedule for CI and Home Assistant updates |
 | `systemd/obd.service` | Systemd unit — update `User`/`Group` if not using `trick` |

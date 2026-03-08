@@ -14,24 +14,24 @@ graph TB
         OBD --- ELM
 
         subgraph RPi[Raspberry Pi + PiSugar2 Battery]
-            quick[quick.py<br/>OBD monitor loop]
+            logger[obd-logger<br/>OBD monitor loop]
             csv[(~/log/obd-*.csv<br/>sensor data)]
             events[(~/log/events.jsonl<br/>event log)]
             dtc[(~/log/dtc.log<br/>trouble codes)]
             post[post-to-hass<br/>every 1 min]
-            ci[ci<br/>every 1 min<br/>15 min cooldown]
+            upd[update<br/>every 1 min<br/>15 min cooldown]
             sync[sync-data<br/>rsync]
             onboot[onboot<br/>BT bind + launch]
             systemd[obd.service<br/>systemd unit]
         end
 
-        ELM -- "Bluetooth RFCOMM<br/>38400 baud" --> quick
-        quick --> csv
-        quick --> events
-        quick --> dtc
+        ELM -- "Bluetooth RFCOMM<br/>38400 baud" --> logger
+        logger --> csv
+        logger --> events
+        logger --> dtc
         systemd -- starts --> onboot
-        onboot -- starts --> quick
-        ci -- calls --> sync
+        onboot -- starts --> logger
+        upd -- calls --> sync
     end
 
     subgraph Home Server
@@ -48,7 +48,7 @@ graph TB
 
     sync -- "rsync over WiFi<br/>when in range" --> rsync_srv
     post -- "HTTPS<br/>when on WiFi" --> hass
-    ci -- "git pull<br/>when on WiFi" --> GitHub[(GitHub)]
+    upd -- "git pull<br/>when on WiFi" --> GitHub[(GitHub)]
 ```
 
 The Pi lives in the car and is **offline during drives**. Data collection and
@@ -85,7 +85,7 @@ off and back on 30 seconds later.
   adapter. Drive IDs are derived from CSV filenames with no car identifier.
   The Grafana dashboards have no car selector. Supporting multiple cars would
   require: a car ID in the CSV filenames and SQLite schema, a per-car
-  Bluetooth MAC in the `id` file, and dashboard variables to filter by car.
+  Bluetooth MAC in the `bt-addr` file, and dashboard variables to filter by car.
 
 ## What it logs
 

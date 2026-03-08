@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Lightweight CI: pull updates from GitHub and sync data.
+# Pull updates from GitHub and sync data.
 # Designed to run every minute via cron. Uses a lock file to prevent
 # concurrent runs, and a timestamp marker to avoid hammering GitHub
 # (skips if last successful run was < 15 minutes ago).
 
 set -u
 
-LOCKFILE="/tmp/obd-ci.lock"
-MARKER="$HOME/log/last-ci"
+LOCKFILE="/tmp/obd-update.lock"
+MARKER="$HOME/log/last-update"
 COOLDOWN=900  # 15 minutes in seconds
 
 # Skip if last successful run was recent
@@ -23,7 +23,7 @@ fi
 # Acquire lock (non-blocking) to prevent concurrent runs
 exec 9>"$LOCKFILE"
 if ! flock -n 9; then
-    echo "ci: another instance is running, skipping"
+    echo "update: another instance is running, skipping"
     exit 0
 fi
 
