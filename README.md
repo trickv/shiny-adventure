@@ -4,7 +4,52 @@ A Raspberry Pi-based OBD-II data logger that runs in your car. It connects to
 an ELM327 Bluetooth adapter, logs sensor data to CSV files, and reports status
 to Home Assistant.
 
-## Architecture
+## System Architecture
+
+```mermaid
+graph TB
+    subgraph Car
+        ELM[ELM327 Bluetooth<br/>OBD-II Adapter]
+        OBD[Car OBD-II Port]
+        OBD --- ELM
+
+        subgraph RPi[Raspberry Pi + PiSugar2 Battery]
+            quick[quick.py<br/>OBD monitor loop]
+            csv[(~/log/obd-*.csv<br/>sensor data)]
+            events[(~/log/events.jsonl<br/>event log)]
+            dtc[(~/log/dtc.log<br/>trouble codes)]
+            post[post-to-hass<br/>every 1 min]
+            ci[ci<br/>every 1 min<br/>15 min cooldown]
+            sync[sync-data<br/>rsync]
+            onboot[onboot<br/>BT bind + launch]
+            systemd[obd.service<br/>systemd unit]
+        end
+
+        ELM -- "Bluetooth RFCOMM<br/>38400 baud" --> quick
+        quick --> csv
+        quick --> events
+        quick --> dtc
+        systemd -- starts --> onboot
+        onboot -- starts --> quick
+        ci -- calls --> sync
+    end
+
+    subgraph Home Server
+        rsync_srv[rsync server<br/>Docker container]
+        importer[import-to-sqlite<br/>inotify watcher]
+        sqlite[(obd.sqlite)]
+        grafana[Grafana<br/>+ SQLite plugin]
+        hass[Home Assistant]
+
+        rsync_srv -- "CSV files<br/>delivered" --> importer
+        importer --> sqlite
+        sqlite --> grafana
+    end
+
+    sync -- "rsync over WiFi<br/>when in range" --> rsync_srv
+    post -- "HTTPS<br/>when on WiFi" --> hass
+    ci -- "git pull<br/>when on WiFi" --> GitHub[(GitHub)]
+```
 
 The Pi lives in the car and is **offline during drives**. Data collection and
 data processing are fully decoupled:
@@ -21,6 +66,26 @@ log (`events.jsonl`) captures every state transition — startup, connection,
 car-on, car-off, shutdown scheduled/cancelled, crashes with tracebacks — so
 you can reconstruct what happened even in weird sequences like the car turning
 off and back on 30 seconds later.
+
+## Known Limitations
+
+- **First ~60 seconds of driving are missed.** The Pi boots from the PiSugar2
+  battery when the car powers on, but boot + Bluetooth pairing + OBD
+  connection takes about a minute. The car is already moving before the first
+  sensor reading is logged.
+
+- **Rsync-based data delivery is old school.** The architecture relies on the
+  car being in home WiFi range for sync. There's no real-time streaming, no
+  mobile data path, and no retry/queueing beyond cron running every minute.
+  A more modern approach would use an MQTT or HTTP push when any network is
+  available, but rsync works fine for the "review drives later at home"
+  use case.
+
+- **Single car assumption.** The system assumes one Pi, one car, one ELM
+  adapter. Drive IDs are derived from CSV filenames with no car identifier.
+  The Grafana dashboards have no car selector. Supporting multiple cars would
+  require: a car ID in the CSV filenames and SQLite schema, a per-car
+  Bluetooth MAC in the `id` file, and dashboard variables to filter by car.
 
 ## What it logs
 
