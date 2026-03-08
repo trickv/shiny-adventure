@@ -1,19 +1,47 @@
 #!/usr/bin/env bash
+# Lightweight CI: pull updates from GitHub and sync data.
+# Designed to run every minute via cron. Uses a lock file to prevent
+# concurrent runs, and a timestamp marker to avoid hammering GitHub
+# (skips if last successful run was < 15 minutes ago).
 
-date
-online=0
-while [ $online -lt 60 ]; do
-    ping -c 1 -w 1 1.1.1.1
-    if [ $? -eq 0 ]; then
-        break
+set -u
+
+LOCKFILE="/tmp/obd-ci.lock"
+MARKER="$HOME/log/last-ci"
+COOLDOWN=900  # 15 minutes in seconds
+
+# Skip if last successful run was recent
+if [ -f "$MARKER" ]; then
+    last=$(stat -c %Y "$MARKER")
+    now=$(date +%s)
+    age=$(( now - last ))
+    if [ "$age" -lt "$COOLDOWN" ]; then
+        exit 0
     fi
-    let online=$online+1
-done
-date
+fi
+
+# Acquire lock (non-blocking) to prevent concurrent runs
+exec 9>"$LOCKFILE"
+if ! flock -n 9; then
+    echo "ci: another instance is running, skipping"
+    exit 0
+fi
+
+# Quick connectivity check — bail immediately if offline
+if ! ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
+    exit 0
+fi
 
 cd $HOME/obd
-git pull -q https://github.com/trickv/obd-logger
-crontab -l | diff -u crontab -
-crontab crontab
-./systemd/install
-./sync-data
+
+# Pull with a timeout so a bad connection doesn't block forever
+if timeout 120 git pull -q https://github.com/trickv/obd-logger; then
+    crontab crontab
+    ./systemd/install
+fi
+
+# Sync data (also benefits from running frequently)
+timeout 300 ./sync-data || true
+
+# Mark successful run
+touch "$MARKER"
