@@ -101,11 +101,16 @@ def import_csv(db, csv_path):
         db.execute("DELETE FROM drives WHERE drive_id = ?", (drive_id,))
 
     rows_inserted = 0
+    skipped = 0
     with open(csv_path, newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            ts = row["timestamp"]
-            time_unix = datetime.fromisoformat(ts).timestamp()
+            ts = row.get("timestamp", "")
+            try:
+                time_unix = datetime.fromisoformat(ts).timestamp()
+            except (ValueError, TypeError):
+                skipped += 1
+                continue
             values = {"drive_id": drive_id, "timestamp": ts, "time_unix": time_unix}
 
             for col in NUMERIC_COLUMNS:
@@ -132,6 +137,9 @@ def import_csv(db, csv_path):
             col_names = ", ".join(columns)
             db.execute(f"INSERT INTO readings ({col_names}) VALUES ({placeholders})", values)
             rows_inserted += 1
+
+    if skipped:
+        print(f"  WARNING: skipped {skipped} corrupt rows in {filename}")
 
     db.execute(
         "INSERT INTO drives (drive_id, filename, imported_at, row_count) VALUES (?, ?, ?, ?)",

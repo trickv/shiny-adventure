@@ -3,3 +3,4 @@
 export RSYNC_PASSWORD=obd
 
 rsync -av --partial $HOME/log rsync://obd@litecoin:8730/data
+touch $HOME/log/last-sync
