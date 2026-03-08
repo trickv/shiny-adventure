@@ -18,7 +18,7 @@ graph TB
         OBD[Car OBD-II Port]
         OBD --- ELM
 
-        subgraph RPi[Raspberry Pi + PiSugar2 Battery]
+        subgraph RPi[Raspberry Pi + PiSugar3 Battery]
             logger[obd-logger<br/>OBD monitor loop]
             csv[(~/log/obd-*.csv<br/>sensor data)]
             events[(~/log/events.jsonl<br/>event log)]
@@ -76,7 +76,7 @@ off and back on 30 seconds later.
 
 ## Known Limitations
 
-- **First ~60 seconds of driving are missed.** The Pi boots from the PiSugar2
+- **First ~60 seconds of driving are missed.** The Pi boots from the PiSugar3
   battery when the car powers on, but boot + Bluetooth pairing + OBD
   connection takes about a minute. The car is already moving before the first
   sensor reading is logged.
@@ -105,7 +105,7 @@ off and back on 30 seconds later.
 ## Hardware
 
 - Raspberry Pi with Raspberry Pi OS (Trixie)
-- PiSugar2 battery module (keeps the Pi alive briefly after the car turns off)
+- PiSugar3 battery module (keeps the Pi alive briefly after the car turns off)
 - ELM327 Bluetooth OBD-II adapter
 
 ## Setup

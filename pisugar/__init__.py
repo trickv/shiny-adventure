@@ -2,8 +2,8 @@
 
 # Written by Tisboyo - 10230718+tisboyo@users.noreply.github.com
 
-# Used for interacting with the PiSugar2 from
-# https://www.tindie.com/products/pisugar/pisugar2-battery-for-raspberry-pi-zero/
+# Used for interacting with PiSugar batteries (PiSugar2/3) from
+# https://www.pisugar.com/
 # Does require installing the PiSugar-Power-Manager software per PiSugars instructions
 
 # This library connects over tcp using a netcat like interaction

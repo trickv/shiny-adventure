@@ -6,7 +6,7 @@ Raspberry Pi running Raspberry Pi OS based on Debian Trixie (13).
 ## Hardware requirements
 
 - Raspberry Pi (Zero, 3, 4, or 5)
-- [PiSugar2 battery module](https://www.pisugar.com/) attached to the Pi
+- [PiSugar3 battery module](https://www.pisugar.com/) attached to the Pi
 - ELM327 Bluetooth OBD-II adapter (this project uses MAC `00:1D:A5:03:62:B2` —
   update `bt-addr` file if yours differs)
 - WiFi connectivity (for Home Assistant reporting and data sync)
