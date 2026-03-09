@@ -39,8 +39,8 @@ DEBOUNCE_SECONDS = 30
 NUMERIC_COLUMNS = [
     "rpm", "speed_kmh", "coolant_temp_c", "engine_load_pct",
     "throttle_pct", "intake_temp_c", "maf_gps", "timing_advance_deg",
-    "fuel_level_pct", "run_time_sec", "baro_kpa", "elm_voltage",
-    "pisugar_battery_pct",
+    "fuel_level_pct", "run_time_sec", "baro_kpa", "fuel_rate_lph",
+    "elm_voltage", "mpg", "pisugar_battery_pct",
 ]
 
 
@@ -61,7 +61,9 @@ def init_db(db):
             fuel_level_pct REAL,
             run_time_sec   REAL,
             baro_kpa       REAL,
+            fuel_rate_lph  REAL,
             elm_voltage    REAL,
+            mpg            REAL,
             pisugar_charging INTEGER,
             pisugar_battery_pct REAL
         );

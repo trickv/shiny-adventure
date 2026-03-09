@@ -27,6 +27,7 @@ ECU_SENSORS = [
     (obd.commands.FUEL_LEVEL, "fuel_level_pct"),
     (obd.commands.RUN_TIME, "run_time_sec"),
     (obd.commands.BAROMETRIC_PRESSURE, "baro_kpa"),
+    (obd.commands.FUEL_RATE, "fuel_rate_lph"),
 ]
 # Adapter sensors — always return data regardless of ignition state.
 # Logged but NOT used for car-on/off detection.
@@ -174,7 +175,7 @@ try:
     # Set up CSV logging
     csv_path = os.path.join(LOG_DIR, f"obd-{datetime.now():%Y%m%d-%H%M%S}.csv")
     csv_file = open(csv_path, "w", newline="")
-    csv_columns = ["timestamp"] + [col for _, col in ALL_SENSORS] + ["pisugar_charging", "pisugar_battery_pct"]
+    csv_columns = ["timestamp"] + [col for _, col in ALL_SENSORS] + ["mpg", "pisugar_charging", "pisugar_battery_pct"]
     csv_writer = csv.DictWriter(csv_file, fieldnames=csv_columns)
     csv_writer.writeheader()
     log_event("csv_logging_started", path=csv_path)
@@ -218,6 +219,15 @@ try:
             if not response.is_null():
                 val = response.value
                 row[col] = val.magnitude if hasattr(val, 'magnitude') else val
+
+        # Compute instantaneous MPG from MAF and speed
+        # MPG = (speed_kmh * 7.718) / MAF_gps
+        # 7.718 = (1/3.785 L/gal) * (1/14.7 AFR) * (1/0.7457 g/cc) * (km to miles)
+        # simplified: 7.718 converts (km/h)/(g/s) to MPG for gasoline
+        maf = row.get("maf_gps")
+        speed = row.get("speed_kmh")
+        if maf and speed and maf > 0:
+            row["mpg"] = round(speed * 7.718 / maf, 1)
 
         if now_mono - last_pisugar_check >= 10:
             charging = pisugar.get_charging_status().value
