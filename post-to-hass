@@ -51,6 +51,27 @@ if [ -n "$latest_csv" ]; then
         fi
     fi
 
+    # Latest readings from the CSV
+    header=$(head -1 "$latest_csv")
+    last_line=$(tail -1 "$latest_csv")
+    # Find column indices (1-based for cut)
+    coolant_col=$(echo "$header" | tr ',' '\n' | grep -n '^coolant_temp_c$' | cut -d: -f1)
+    voltage_col=$(echo "$header" | tr ',' '\n' | grep -n '^elm_voltage$' | cut -d: -f1)
+    if [ -n "$coolant_col" ]; then
+        coolant=$(echo "$last_line" | cut -d, -f"$coolant_col")
+        if [ -n "$coolant" ]; then
+            post_sensor "obd_coolant_temp" "obd coolant temp" \
+                "$coolant" ', "unit_of_measurement": "°C", "device_class": "temperature"'
+        fi
+    fi
+    if [ -n "$voltage_col" ]; then
+        voltage=$(echo "$last_line" | cut -d, -f"$voltage_col")
+        if [ -n "$voltage" ]; then
+            post_sensor "obd_battery_voltage" "obd battery voltage" \
+                "$voltage" ', "unit_of_measurement": "V", "device_class": "voltage"'
+        fi
+    fi
+
     # Row count (data points logged)
     row_count=$(( $(wc -l < "$latest_csv") - 1 ))
     post_sensor "obd_drive_data_points" "obd drive data points" "$row_count"
