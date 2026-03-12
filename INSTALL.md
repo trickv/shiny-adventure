@@ -34,7 +34,8 @@ sudo apt install -y \
     python3 python3-venv python3-pip \
     moreutils \
     rsync curl \
-    wireless-tools
+    wireless-tools \
+    i2c-tools
 ```
 
 Package purposes:
