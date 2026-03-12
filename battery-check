@@ -24,5 +24,4 @@ if pct >= SHUTDOWN_THRESHOLD:
     sys.exit(0)
 
 print(f"Battery at {pct}% (threshold {SHUTDOWN_THRESHOLD}%), shutting down")
-pisugar.enable_soft_poweroff()
 subprocess.run(["sudo", "shutdown", "-h", "now"])

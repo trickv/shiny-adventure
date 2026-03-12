@@ -4,7 +4,7 @@ cd $(dirname $(realpath $0))
 
 changed=0
 
-for unit in obd.service rtc-sync.service; do
+for unit in obd.service rtc-sync.service pisugar-poweroff.service; do
     diff -u "$unit" "/etc/systemd/system/$unit" 2>/dev/null
     if [ $? -ne 0 ]; then
         echo "Installing $unit..."
@@ -22,3 +22,4 @@ echo "Enabling systemd services"
 # It seems normal for these to output an error, however they do succeed:
 sudo systemctl enable obd
 sudo systemctl enable rtc-sync
+sudo systemctl enable pisugar-poweroff

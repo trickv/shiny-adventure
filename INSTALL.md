@@ -230,8 +230,8 @@ cd ~/obd
 ./systemd/install
 ```
 
-This copies `obd.service` and `rtc-sync.service` to `/etc/systemd/system/`,
-reloads systemd, and enables both services.
+This copies `obd.service`, `rtc-sync.service`, and `pisugar-poweroff.service`
+to `/etc/systemd/system/`, reloads systemd, and enables all three.
 
 ## 13. Install the crontab
 
@@ -283,6 +283,7 @@ On boot, the `obd` systemd service will:
 | `crontab` | Cron schedule for CI and Home Assistant updates |
 | `systemd/obd.service` | Systemd unit — update `User`/`Group` if not using `trick` |
 | `systemd/rtc-sync.service` | Syncs system clock → DS3231 RTC after NTP sync |
+| `systemd/pisugar-poweroff.service` | Tells PiSugar MCU to cut power at shutdown |
 
 ## Troubleshooting
 

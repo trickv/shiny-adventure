@@ -15,6 +15,7 @@ I2C_BUS = 1
 # Registers
 REG_CTR1 = 0x02
 REG_CTR2 = 0x03
+REG_SHUTDOWN_DELAY = 0x09
 REG_WRITE_ENABLE = 0x0B
 REG_VOLTAGE_H = 0x22
 REG_VOLTAGE_L = 0x23
@@ -101,16 +102,18 @@ class PiSugar2:
             ctr1 &= ~0x10 & 0xFF
         self._write_byte(REG_CTR1, ctr1)
 
-    def enable_soft_poweroff(self):
-        """Tell the PiSugar to cut power after the Pi shuts down.
+    def poweroff(self, delay_seconds=3):
+        """Tell the PiSugar MCU to cut output power after a delay.
 
-        Sets bit 4 of CTR2. The MCU monitors I2C; once the Pi stops
-        communicating it cuts power automatically.
+        This is what the stock pisugar-poweroff service did at shutdown:
+        set a countdown timer, then disable the 5V output. The MCU waits
+        delay_seconds before actually cutting power, giving the Pi time
+        to finish shutting down.
         """
-        ctr2 = self.bus.read_byte_data(self.addr, REG_CTR2)
-        ctr2 &= 0b1110_0000  # clear low bits
-        ctr2 |= 0b0001_0000  # set soft poweroff bit
-        self._write_byte(REG_CTR2, ctr2)
+        self._write_byte(REG_SHUTDOWN_DELAY, delay_seconds)
+        ctr1 = self.bus.read_byte_data(self.addr, REG_CTR1)
+        ctr1 &= ~0x20 & 0xFF  # clear bit 5 (output enable)
+        self._write_byte(REG_CTR1, ctr1)
 
 
 if __name__ == "__main__":

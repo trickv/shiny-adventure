@@ -1,0 +1,15 @@
+#!/home/trick/obd/venv/bin/python3
+
+"""Tell the PiSugar MCU to cut power after the Pi finishes shutting down.
+
+Runs as a systemd oneshot at shutdown. Sets a 3-second delay timer,
+then disables the MCU's 5V output. The MCU waits for the countdown
+before actually cutting power, so the Pi can finish its shutdown
+cleanly.
+"""
+
+from pisugar import PiSugar2
+
+pisugar = PiSugar2()
+pisugar.poweroff(delay_seconds=3)
+print("PiSugar poweroff scheduled (3s delay)")

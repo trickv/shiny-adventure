@@ -1,0 +1,12 @@
+[Unit]
+Description=Tell PiSugar MCU to cut power after shutdown
+DefaultDependencies=no
+Before=poweroff.target halt.target shutdown.target
+After=final.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/trick/obd/pisugar-poweroff
+
+[Install]
+WantedBy=shutdown.target
