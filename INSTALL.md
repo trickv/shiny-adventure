@@ -128,7 +128,7 @@ RTC running for over a year.
 
 ### Automatic RTC sync after NTP
 
-The `rtc-sync.service` (installed in step 12) runs `hwclock --systohc` once
+The `rtc-sync.service` (installed in step 11) runs `hwclock --systohc` once
 after `systemd-timesyncd` synchronizes the clock. This keeps the RTC accurate
 whenever the Pi is online — no manual `hwclock -w` needed after initial setup.
 
@@ -162,14 +162,14 @@ chmod 600 secret.sh
 
 ## 8. Python virtual environment
 
-Debian Trixie enforces PEP 668 — you cannot `pip install` into the system
-Python. Use a venv:
+The `update` cron job automatically creates the venv and keeps packages
+up to date on every run. For initial setup (before cron is installed),
+bootstrap it manually:
 
 ```bash
 cd ~/obd
 python3 -m venv venv
-source venv/bin/activate
-pip install obd smbus2
+venv/bin/pip install obd smbus2
 ```
 
 All Python scripts have shebangs pointing at `~/obd/venv/bin/python3`, so the
@@ -217,13 +217,7 @@ Add:
 trick ALL=(ALL) NOPASSWD: /usr/bin/rfcomm, /usr/sbin/shutdown
 ```
 
-## 11. Create the log directory
-
-```bash
-mkdir -p ~/log
-```
-
-## 12. Install the systemd service
+## 11. Install the systemd service
 
 ```bash
 cd ~/obd
@@ -233,7 +227,7 @@ cd ~/obd
 This copies `obd.service`, `rtc-sync.service`, and `pisugar-poweroff.service`
 to `/etc/systemd/system/`, reloads systemd, and enables all three.
 
-## 13. Install the crontab
+## 12. Install the crontab
 
 ```bash
 crontab ~/obd/crontab
@@ -244,7 +238,7 @@ This sets up:
 - Every 1 minute: `post-to-hass` (report sensors to Home Assistant)
 - Every 1 minute: `battery-check` (shut down if battery <20% and not charging)
 
-## 14. Verify
+## 13. Verify
 
 ```bash
 # Check systemd service
@@ -262,7 +256,7 @@ sudo rfcomm bind rfcomm0 $(cat ~/obd/bt-addr)
 ls -l /dev/rfcomm0
 ```
 
-## 15. Reboot and go
+## 14. Reboot and go
 
 ```bash
 sudo reboot

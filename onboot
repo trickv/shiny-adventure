@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 cd $HOME/obd
+mkdir -p $HOME/log
 
 sudo rfcomm bind rfcomm0 $(cat bt-addr)
 
