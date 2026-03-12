@@ -11,7 +11,7 @@ import traceback
 from datetime import datetime
 
 import obd
-from pisugar import PiSugar2
+from pisugar import PiSugar3
 
 # ECU sensors — these only return data when the ignition is on.
 # Used for car-on/off detection.
@@ -114,7 +114,7 @@ csv_file = None
 try:
     log_event("startup", argv=sys.argv, pid=os.getpid())
 
-    pisugar = PiSugar2()
+    pisugar = PiSugar3()
     log_event("pisugar_connected")
 
     if len(sys.argv) > 1 and sys.argv[1] == "prompt":

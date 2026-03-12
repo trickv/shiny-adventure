@@ -21,6 +21,11 @@ REG_VOLTAGE_H = 0x22
 REG_VOLTAGE_L = 0x23
 REG_PERCENTAGE = 0x2A
 
+# CTR1 bit masks
+CTR1_POWER_PLUGGED = 0x80
+CTR1_OUTPUT_ENABLE = 0x20
+CTR1_AUTO_POWER_ON = 0x10
+
 # Software RTC registers (BCD encoded)
 REG_RTC_YY = 0x31
 REG_RTC_MM = 0x32
@@ -29,17 +34,17 @@ REG_RTC_HH = 0x35
 REG_RTC_MN = 0x36
 REG_RTC_SS = 0x37
 
-Result = namedtuple("PiSugar", "name value command")
+Result = namedtuple("PiSugar", "name value")
 
 
 def _bcd_to_int(bcd):
     return (bcd >> 4) * 10 + (bcd & 0x0F)
 
 
-class PiSugar2:
+class PiSugar3:
     """Drop-in replacement using direct I2C instead of the TCP daemon.
 
-    Keeps the PiSugar2 class name for compatibility with existing code.
+    PiSugar 3 only — uses the PiSugar3 MCU register map (I2C address 0x57).
     """
 
     def __init__(self, bus=I2C_BUS, addr=PISUGAR3_ADDR):
@@ -49,26 +54,28 @@ class PiSugar2:
     def _write_byte(self, reg, value):
         """Write a byte with the required unlock/lock sequence."""
         self.bus.write_byte_data(self.addr, REG_WRITE_ENABLE, 0x29)
-        self.bus.write_byte_data(self.addr, reg, value)
-        self.bus.write_byte_data(self.addr, REG_WRITE_ENABLE, 0x00)
+        try:
+            self.bus.write_byte_data(self.addr, reg, value)
+        finally:
+            self.bus.write_byte_data(self.addr, REG_WRITE_ENABLE, 0x00)
 
     def get_battery_percentage(self):
         """Returns the current battery level percentage (0-100)."""
         pct = self.bus.read_byte_data(self.addr, REG_PERCENTAGE)
-        return Result(name="percentage", value=float(pct), command="get battery")
+        return Result(name="percentage", value=float(pct))
 
     def get_voltage(self):
         """Returns the current battery voltage in volts."""
         vh = self.bus.read_byte_data(self.addr, REG_VOLTAGE_H)
         vl = self.bus.read_byte_data(self.addr, REG_VOLTAGE_L)
         voltage = ((vh << 8) | vl) / 1000.0
-        return Result(name="voltage", value=voltage, command="get battery_v")
+        return Result(name="voltage", value=voltage)
 
     def get_charging_status(self):
         """Returns whether external power is plugged in."""
         ctr1 = self.bus.read_byte_data(self.addr, REG_CTR1)
-        plugged = bool(ctr1 & 0x80)
-        return Result(name="charging", value=plugged, command="get battery_charging")
+        plugged = bool(ctr1 & CTR1_POWER_PLUGGED)
+        return Result(name="charging", value=plugged)
 
     def get_rtc_time(self):
         """Read the software RTC time from the PiSugar3 MCU."""
@@ -81,7 +88,6 @@ class PiSugar2:
         return Result(
             name="rtc_time",
             value=datetime(2000 + yy, mm, dd, hh, mn, ss),
-            command="get rtc_time",
         )
 
     def get_auto_power_on(self):
@@ -89,17 +95,16 @@ class PiSugar2:
         ctr1 = self.bus.read_byte_data(self.addr, REG_CTR1)
         return Result(
             name="auto_power_on",
-            value=bool(ctr1 & 0x10),
-            command="get auto_power_on",
+            value=bool(ctr1 & CTR1_AUTO_POWER_ON),
         )
 
     def set_auto_power_on(self, enabled):
         """Enable/disable auto power-on when external power is restored."""
         ctr1 = self.bus.read_byte_data(self.addr, REG_CTR1)
         if enabled:
-            ctr1 |= 0x10
+            ctr1 |= CTR1_AUTO_POWER_ON
         else:
-            ctr1 &= ~0x10 & 0xFF
+            ctr1 &= ~CTR1_AUTO_POWER_ON & 0xFF
         self._write_byte(REG_CTR1, ctr1)
 
     def poweroff(self, delay_seconds=3):
@@ -112,12 +117,12 @@ class PiSugar2:
         """
         self._write_byte(REG_SHUTDOWN_DELAY, delay_seconds)
         ctr1 = self.bus.read_byte_data(self.addr, REG_CTR1)
-        ctr1 &= ~0x20 & 0xFF  # clear bit 5 (output enable)
+        ctr1 &= ~CTR1_OUTPUT_ENABLE & 0xFF
         self._write_byte(REG_CTR1, ctr1)
 
 
 if __name__ == "__main__":
-    pisugar = PiSugar2()
+    pisugar = PiSugar3()
     print(f"Battery:       {pisugar.get_battery_percentage().value}%")
     print(f"Voltage:       {pisugar.get_voltage().value}V")
     print(f"Charging:      {pisugar.get_charging_status().value}")
