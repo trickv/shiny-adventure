@@ -1,0 +1,212 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["inotify"]
+# ///
+"""Import OBD CSV logs into a SQLite database for Grafana.
+
+Watches a log directory via inotify for new/modified obd-*.csv files.
+After 30 seconds of inactivity (no more writes), imports all pending
+files. This naturally debounces rsync deliveries.
+
+Can also be run as a one-shot import with --once.
+
+Usage:
+    ./import-to-sqlite                          # watch mode (default)
+    ./import-to-sqlite --once                   # one-shot import and exit
+    ./import-to-sqlite /path/to/log /path/to/db # custom paths
+"""
+
+import csv
+import glob
+import os
+import sqlite3
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+# Parse args: flags first, then positional
+args = [a for a in sys.argv[1:] if not a.startswith("-")]
+flags = [a for a in sys.argv[1:] if a.startswith("-")]
+
+LOG_DIR = args[0] if len(args) > 0 else os.path.expanduser("~/docker-services/obd/log")
+DB_PATH = args[1] if len(args) > 1 else os.path.join(LOG_DIR, "obd.sqlite")
+ONE_SHOT = "--once" in flags
+
+DEBOUNCE_SECONDS = 30
+
+NUMERIC_COLUMNS = [
+    "rpm", "speed_kmh", "coolant_temp_c", "engine_load_pct",
+    "throttle_pct", "intake_temp_c", "maf_gps", "timing_advance_deg",
+    "fuel_level_pct", "run_time_sec", "baro_kpa", "fuel_rate_lph",
+    "elm_voltage", "mpg", "pisugar_battery_pct",
+]
+
+
+def init_db(db):
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS readings (
+            drive_id       TEXT NOT NULL,
+            timestamp      TEXT NOT NULL,
+            time_unix      REAL NOT NULL,
+            rpm            REAL,
+            speed_kmh      REAL,
+            coolant_temp_c REAL,
+            engine_load_pct REAL,
+            throttle_pct   REAL,
+            intake_temp_c  REAL,
+            maf_gps        REAL,
+            timing_advance_deg REAL,
+            fuel_level_pct REAL,
+            run_time_sec   REAL,
+            baro_kpa       REAL,
+            fuel_rate_lph  REAL,
+            elm_voltage    REAL,
+            mpg            REAL,
+            pisugar_charging INTEGER,
+            pisugar_battery_pct REAL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_readings_drive ON readings(drive_id);
+        CREATE INDEX IF NOT EXISTS idx_readings_ts ON readings(timestamp);
+
+        CREATE TABLE IF NOT EXISTS drives (
+            drive_id   TEXT PRIMARY KEY,
+            filename   TEXT NOT NULL,
+            imported_at TEXT NOT NULL,
+            row_count  INTEGER NOT NULL
+        );
+    """)
+
+
+def import_csv(db, csv_path):
+    filename = os.path.basename(csv_path)
+    # drive_id is the filename without extension, e.g. "obd-20260306-164722"
+    drive_id = os.path.splitext(filename)[0]
+
+    # Check if already imported
+    existing = db.execute(
+        "SELECT row_count FROM drives WHERE drive_id = ?", (drive_id,)
+    ).fetchone()
+
+    file_rows = sum(1 for _ in open(csv_path)) - 1  # subtract header
+    if file_rows <= 0:
+        return 0
+
+    if existing and existing[0] >= file_rows:
+        return 0  # already fully imported
+
+    # Delete any partial import and re-import
+    if existing:
+        db.execute("DELETE FROM readings WHERE drive_id = ?", (drive_id,))
+        db.execute("DELETE FROM drives WHERE drive_id = ?", (drive_id,))
+
+    rows_inserted = 0
+    skipped = 0
+    with open(csv_path, newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            ts = row.get("timestamp", "")
+            try:
+                time_unix = datetime.fromisoformat(ts).timestamp()
+            except (ValueError, TypeError):
+                skipped += 1
+                continue
+            values = {"drive_id": drive_id, "timestamp": ts, "time_unix": time_unix}
+
+            for col in NUMERIC_COLUMNS:
+                raw = row.get(col, "")
+                if raw == "":
+                    values[col] = None
+                else:
+                    try:
+                        values[col] = float(raw)
+                    except ValueError:
+                        values[col] = None
+
+            # pisugar_charging: "True"/"False"/""  -> 1/0/NULL
+            charging = row.get("pisugar_charging", "")
+            if charging == "True":
+                values["pisugar_charging"] = 1
+            elif charging == "False":
+                values["pisugar_charging"] = 0
+            else:
+                values["pisugar_charging"] = None
+
+            columns = list(values.keys())
+            placeholders = ", ".join(":" + c for c in columns)
+            col_names = ", ".join(columns)
+            db.execute(f"INSERT INTO readings ({col_names}) VALUES ({placeholders})", values)
+            rows_inserted += 1
+
+    if skipped:
+        print(f"  WARNING: skipped {skipped} corrupt rows in {filename}")
+
+    db.execute(
+        "INSERT INTO drives (drive_id, filename, imported_at, row_count) VALUES (?, ?, ?, ?)",
+        (drive_id, filename, datetime.now().isoformat(), rows_inserted),
+    )
+
+    return rows_inserted
+
+
+def run_import():
+    db = sqlite3.connect(DB_PATH)
+    init_db(db)
+
+    csv_files = sorted(glob.glob(os.path.join(LOG_DIR, "obd-*.csv")))
+    total = 0
+    for csv_path in csv_files:
+        count = import_csv(db, csv_path)
+        if count > 0:
+            name = os.path.basename(csv_path)
+            print(f"  {name}: {count} rows")
+            total += count
+
+    db.commit()
+    db.close()
+
+    if total > 0:
+        print(f"Imported {total} rows into {DB_PATH}")
+    else:
+        print("Nothing new to import.")
+
+
+def watch():
+    import inotify.adapters
+
+    print(f"Watching {LOG_DIR} for CSV changes (debounce={DEBOUNCE_SECONDS}s)")
+
+    # Import anything already pending on startup
+    run_import()
+
+    i = inotify.adapters.Inotify()
+    i.add_watch(LOG_DIR)
+
+    last_event_time = None
+
+    while True:
+        # Poll with a 1-second timeout so we can check the debounce timer
+        for event in i.event_gen(timeout_s=1, yield_nones=False):
+            (_, type_names, path, filename) = event
+            if not filename.startswith("obd-") or not filename.endswith(".csv"):
+                continue
+            if any(t in type_names for t in ("IN_CLOSE_WRITE", "IN_MOVED_TO", "IN_MODIFY")):
+                last_event_time = time.monotonic()
+                print(f"Change detected: {filename}")
+
+        # Check if debounce period has elapsed
+        if last_event_time is not None:
+            elapsed = time.monotonic() - last_event_time
+            if elapsed >= DEBOUNCE_SECONDS:
+                print(f"No activity for {DEBOUNCE_SECONDS}s, importing...")
+                run_import()
+                last_event_time = None
+
+
+if __name__ == "__main__":
+    if ONE_SHOT:
+        run_import()
+    else:
+        watch()

@@ -6,47 +6,89 @@ set -e
 cd $HOME/obd
 source secret.sh
 
-sensor=$($HOME/obd/battery.py)
-hass_friendly_name="obd battery level"
-hass_name="obd_battery_percent"
+HASS_URL="https://hass.vanstaveren.us/api/states"
 
-curl -s -X POST -H "Authorization: Bearer $hass_llac" \
-   -H "Content-Type: application/json" \
-   -d "{\"state\": \"$sensor\", \"attributes\": {\"unit_of_measurement\": \"%\", \"friendly_name\": \"$hass_friendly_name\"}}" \
-   https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
+post_sensor() {
+    local name="$1" friendly="$2" state="$3" extra="${4:-}"
+    curl -s -X POST -H "Authorization: Bearer $hass_llac" \
+       -H "Content-Type: application/json" \
+       -d "{\"state\": \"$state\", \"attributes\": {\"friendly_name\": \"$friendly\"$extra}}" \
+       "$HASS_URL/sensor.$name" > /dev/null
+}
 
-sensor=$($HOME/obd/charging_status.py)
-hass_friendly_name="obd charging status"
-hass_name="obd_charging_status"
+post_sensor "obd_battery_percent" "obd battery level" \
+    "$($HOME/obd/battery.py)" ', "unit_of_measurement": "%"'
 
-curl -s -X POST -H "Authorization: Bearer $hass_llac" \
-   -H "Content-Type: application/json" \
-   -d "{\"state\": \"$sensor\", \"attributes\": {\"friendly_name\": \"$hass_friendly_name\"}}" \
-   https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
+post_sensor "obd_charging_status" "obd charging status" \
+    "$($HOME/obd/charging_status.py)"
 
-sensor=$(/sbin/iwconfig wlan0 | grep ESSID | cut -d\" -f2)
-hass_friendly_name="obd wifi name"
-hass_name="obd_wifi_name"
+post_sensor "obd_wifi_name" "obd wifi name" \
+    "$(/sbin/iwconfig wlan0 | grep ESSID | cut -d\" -f2)"
 
-curl -s -X POST -H "Authorization: Bearer $hass_llac" \
-   -H "Content-Type: application/json" \
-   -d "{\"state\": \"$sensor\", \"attributes\": {\"friendly_name\": \"$hass_friendly_name\"}}" \
-   https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
+post_sensor "obd_git_rev" "obd git rev" \
+    "$(TZ=America/Chicago git log --date=local -1 --format=%cd) $(git rev-parse --short HEAD)"
 
-sensor="$(TZ=America/Chicago git log --date=local -1 --format=%cd) $(git rev-parse --short HEAD)"
-hass_friendly_name="obd git rev"
-hass_name="obd_git_rev"
+post_sensor "obd_uptime" "obd uptime" \
+    "$(uptime)"
 
-curl -s -X POST -H "Authorization: Bearer $hass_llac" \
-   -H "Content-Type: application/json" \
-   -d "{\"state\": \"$sensor\", \"attributes\": {\"friendly_name\": \"$hass_friendly_name\"}}" \
-   https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
+# --- Drive summary sensors ---
 
-sensor=$(uptime)
-hass_friendly_name="obd uptime"
-hass_name="obd_uptime"
+latest_csv=$(ls -t $HOME/log/obd-*.csv 2>/dev/null | head -1)
+if [ -n "$latest_csv" ]; then
+    csv_name=$(basename "$latest_csv")
+    post_sensor "obd_latest_drive" "obd latest drive" "$csv_name"
 
-curl -s -X POST -H "Authorization: Bearer $hass_llac" \
-   -H "Content-Type: application/json" \
-   -d "{\"state\": \"$sensor\", \"attributes\": {\"friendly_name\": \"$hass_friendly_name\"}}" \
-   https://hass.vanstaveren.us/api/states/sensor.$hass_name > /dev/null
+    # Drive duration: difference between first and last timestamp in the CSV
+    first_ts=$(sed -n '2p' "$latest_csv" | cut -d, -f1)
+    last_ts=$(tail -1 "$latest_csv" | cut -d, -f1)
+    if [ -n "$first_ts" ] && [ -n "$last_ts" ]; then
+        first_epoch=$(date -d "$first_ts" +%s 2>/dev/null || echo "")
+        last_epoch=$(date -d "$last_ts" +%s 2>/dev/null || echo "")
+        if [ -n "$first_epoch" ] && [ -n "$last_epoch" ]; then
+            duration_min=$(( (last_epoch - first_epoch) / 60 ))
+            post_sensor "obd_drive_duration" "obd drive duration" \
+                "$duration_min" ', "unit_of_measurement": "min"'
+        fi
+    fi
+
+    # Latest readings from the CSV
+    header=$(head -1 "$latest_csv")
+    last_line=$(tail -1 "$latest_csv")
+    # Find column indices (1-based for cut)
+    coolant_col=$(echo "$header" | tr ',' '\n' | grep -n '^coolant_temp_c$' | cut -d: -f1)
+    voltage_col=$(echo "$header" | tr ',' '\n' | grep -n '^elm_voltage$' | cut -d: -f1)
+    if [ -n "$coolant_col" ]; then
+        coolant=$(echo "$last_line" | cut -d, -f"$coolant_col")
+        if [ -n "$coolant" ]; then
+            post_sensor "obd_coolant_temp" "obd coolant temp" \
+                "$coolant" ', "unit_of_measurement": "°C", "device_class": "temperature"'
+        fi
+    fi
+    if [ -n "$voltage_col" ]; then
+        voltage=$(echo "$last_line" | cut -d, -f"$voltage_col")
+        if [ -n "$voltage" ]; then
+            post_sensor "obd_battery_voltage" "obd battery voltage" \
+                "$voltage" ', "unit_of_measurement": "V", "device_class": "voltage"'
+        fi
+    fi
+
+    # Row count (data points logged)
+    row_count=$(( $(wc -l < "$latest_csv") - 1 ))
+    post_sensor "obd_drive_data_points" "obd drive data points" "$row_count"
+
+    # Total drive count
+    drive_count=$(ls $HOME/log/obd-*.csv 2>/dev/null | wc -l)
+    post_sensor "obd_total_drives" "obd total drives" "$drive_count"
+fi
+
+# Minutes since last sync-data run (check log dir mtime or sync marker)
+sync_log="$HOME/log/last-sync"
+if [ -f "$sync_log" ]; then
+    sync_epoch=$(stat -c %Y "$sync_log")
+    now_epoch=$(date +%s)
+    sync_ago_min=$(( (now_epoch - sync_epoch) / 60 ))
+    post_sensor "obd_minutes_since_sync" "obd minutes since sync" \
+        "$sync_ago_min" ', "unit_of_measurement": "min"'
+else
+    post_sensor "obd_minutes_since_sync" "obd minutes since sync" "never"
+fi

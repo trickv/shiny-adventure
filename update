@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Pull updates from GitHub and sync data.
+# Designed to run every minute via cron. Uses a lock file to prevent
+# concurrent runs, and a timestamp marker to avoid hammering GitHub
+# (skips if last successful run was < 15 minutes ago).
+
+set -u
+
+LOCKFILE="/tmp/obd-update.lock"
+MARKER="$HOME/log/last-update"
+COOLDOWN=900  # 15 minutes in seconds
+
+# Skip if last successful run was recent
+if [ -f "$MARKER" ]; then
+    last=$(stat -c %Y "$MARKER")
+    now=$(date +%s)
+    age=$(( now - last ))
+    if [ "$age" -lt "$COOLDOWN" ]; then
+        exit 0
+    fi
+fi
+
+# Acquire lock (non-blocking) to prevent concurrent runs
+exec 9>"$LOCKFILE"
+if ! flock -n 9; then
+    echo "update: another instance is running, skipping"
+    exit 0
+fi
+
+# Quick connectivity check — bail immediately if offline
+if ! ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
+    exit 0
+fi
+
+cd $HOME/obd
+
+# Pull with a timeout so a bad connection doesn't block forever
+if timeout 120 git pull -q https://github.com/trickv/obd-logger; then
+    crontab crontab
+    ./systemd/install
+fi
+
+# Sync data (also benefits from running frequently)
+timeout 300 ./sync-data || true
+
+# Mark successful run
+touch "$MARKER"

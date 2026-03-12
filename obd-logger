@@ -13,10 +13,9 @@ from datetime import datetime
 import obd
 from pisugar import PiSugar2
 
-# Sensors to log when the car is running.
-# Each entry is (obd command, csv column name).
-# Not all cars support all sensors — unsupported ones are silently skipped.
-SENSORS = [
+# ECU sensors — these only return data when the ignition is on.
+# Used for car-on/off detection.
+ECU_SENSORS = [
     (obd.commands.RPM, "rpm"),
     (obd.commands.SPEED, "speed_kmh"),
     (obd.commands.COOLANT_TEMP, "coolant_temp_c"),
@@ -28,8 +27,14 @@ SENSORS = [
     (obd.commands.FUEL_LEVEL, "fuel_level_pct"),
     (obd.commands.RUN_TIME, "run_time_sec"),
     (obd.commands.BAROMETRIC_PRESSURE, "baro_kpa"),
+    (obd.commands.FUEL_RATE, "fuel_rate_lph"),
+]
+# Adapter sensors — always return data regardless of ignition state.
+# Logged but NOT used for car-on/off detection.
+ADAPTER_SENSORS = [
     (obd.commands.ELM_VOLTAGE, "elm_voltage"),
 ]
+ALL_SENSORS = ECU_SENSORS + ADAPTER_SENSORS
 
 LOG_DIR = os.path.expanduser("~/log")
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -145,7 +150,7 @@ try:
     # Log which sensors the car supports
     supported = connection.supported_commands
     sensor_support = {}
-    for cmd, col in SENSORS:
+    for cmd, col in ALL_SENSORS:
         sensor_support[col] = cmd in supported
     log_event("sensor_support", total_supported=len(supported), sensors=sensor_support)
 
@@ -170,45 +175,76 @@ try:
     # Set up CSV logging
     csv_path = os.path.join(LOG_DIR, f"obd-{datetime.now():%Y%m%d-%H%M%S}.csv")
     csv_file = open(csv_path, "w", newline="")
-    csv_columns = ["timestamp"] + [col for _, col in SENSORS] + ["pisugar_charging", "pisugar_battery_pct"]
+    csv_columns = ["timestamp"] + [col for _, col in ALL_SENSORS] + ["mpg", "pisugar_charging", "pisugar_battery_pct"]
     csv_writer = csv.DictWriter(csv_file, fieldnames=csv_columns)
     csv_writer.writeheader()
     log_event("csv_logging_started", path=csv_path)
 
     # Filter to only supported sensors
-    active_sensors = [(cmd, col) for cmd, col in SENSORS if cmd in supported]
+    active_ecu_sensors = [(cmd, col) for cmd, col in ECU_SENSORS if cmd in supported]
+    active_adapter_sensors = [(cmd, col) for cmd, col in ADAPTER_SENSORS if cmd in supported]
 
     consecutive_nulls = 0
     NULL_THRESHOLD = 10
     rows_written = 0
+    loop_start = time.monotonic()
+    MAX_LOOP_SECONDS = 3600
+    last_pisugar_check = 0
+    last_dtc_check = 0
+    last_status_print = 0
 
-    for x in range(0, 3600):
+    while True:
+        now_mono = time.monotonic()
+        elapsed = now_mono - loop_start
+
+        if elapsed > MAX_LOOP_SECONDS:
+            break
+
         time.sleep(1)
 
         row = {"timestamp": datetime.now().isoformat()}
-        got_data = False
 
-        for cmd, col in active_sensors:
+        # Query ECU sensors — these determine car-on/off
+        ecu_got_data = False
+        for cmd, col in active_ecu_sensors:
             response = connection.query(cmd)
             if not response.is_null():
                 val = response.value
                 row[col] = val.magnitude if hasattr(val, 'magnitude') else val
-                got_data = True
+                ecu_got_data = True
 
-        if x % 10 == 0:
+        # Query adapter sensors — always respond, don't affect car-on/off
+        for cmd, col in active_adapter_sensors:
+            response = connection.query(cmd)
+            if not response.is_null():
+                val = response.value
+                row[col] = val.magnitude if hasattr(val, 'magnitude') else val
+
+        # Compute instantaneous MPG from MAF and speed
+        # MPG = (speed_kmh * 7.718) / MAF_gps
+        # 7.718 = (1/3.785 L/gal) * (1/14.7 AFR) * (1/0.7457 g/cc) * (km to miles)
+        # simplified: 7.718 converts (km/h)/(g/s) to MPG for gasoline
+        maf = row.get("maf_gps")
+        speed = row.get("speed_kmh")
+        if maf and speed and maf > 0:
+            row["mpg"] = round(speed * 7.718 / maf, 1)
+
+        if now_mono - last_pisugar_check >= 10:
             charging = pisugar.get_charging_status().value
             battery = pisugar.get_battery_percentage().value
             row["pisugar_charging"] = charging
             row["pisugar_battery_pct"] = battery
             print(f"pisugar: charging={charging}, level={battery}")
+            last_pisugar_check = now_mono
 
-        if got_data:
+        if ecu_got_data:
             consecutive_nulls = 0
-            if x % 5 == 0:
+            if now_mono - last_status_print >= 5:
                 rpm = row.get("rpm", "?")
                 speed = row.get("speed_kmh", "?")
                 coolant = row.get("coolant_temp_c", "?")
                 print(f"RPM={rpm} Speed={speed} Coolant={coolant}")
+                last_status_print = now_mono
         else:
             consecutive_nulls += 1
 
@@ -217,21 +253,24 @@ try:
 
         if consecutive_nulls > NULL_THRESHOLD:
             log_event("car_off_detected", consecutive_nulls=consecutive_nulls,
-                      rows_written=rows_written)
+                      rows_written=rows_written,
+                      elapsed_sec=round(elapsed))
             csv_file.close()
             csv_file = None
             schedule_shutdown_if_needed()
             sys.exit(0)
 
         # Re-check DTCs periodically
-        if x > 0 and x % DTC_CHECK_INTERVAL == 0:
+        if now_mono - last_dtc_check >= DTC_CHECK_INTERVAL:
             check_dtcs(connection)
+            last_dtc_check = now_mono
 
         # Flush CSV periodically so data isn't lost on unclean exit
-        if x % 30 == 0:
+        if rows_written % 30 == 0:
             csv_file.flush()
 
-    log_event("loop_timeout", rows_written=rows_written)
+    log_event("loop_timeout", rows_written=rows_written,
+              elapsed_sec=round(time.monotonic() - loop_start))
     csv_file.close()
     csv_file = None
     subprocess.run(["./sync-data"])
