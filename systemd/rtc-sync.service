@@ -1,0 +1,11 @@
+[Unit]
+Description=Sync system clock to DS3231 RTC after NTP sync
+After=time-sync.target
+Wants=time-sync.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/hwclock --systohc
+
+[Install]
+WantedBy=time-sync.target

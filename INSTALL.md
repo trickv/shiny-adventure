@@ -35,7 +35,8 @@ sudo apt install -y \
     moreutils \
     rsync curl \
     wireless-tools \
-    i2c-tools
+    i2c-tools \
+    util-linux-extra
 ```
 
 Package purposes:
@@ -46,6 +47,7 @@ Package purposes:
 - `rsync` — log sync to remote server
 - `curl` — Home Assistant API calls
 - `wireless-tools` — provides `iwconfig` for WiFi ESSID reporting
+- `util-linux-extra` — provides `hwclock` for RTC sync
 
 ## 3. Enable I2C (for PiSugar)
 
@@ -57,23 +59,19 @@ Navigate to: **Interface Options → I2C → Yes**
 
 Reboot after enabling.
 
-## 4. Install PiSugar Power Manager
+## 4. PiSugar setup
 
-The PiSugar daemon listens on TCP port 8423 and is required by `obd-logger` and
-the battery scripts.
+The `pisugar/` module talks directly to the PiSugar3 over I2C (address 0x57)
+using `smbus2`. No pisugar-server daemon is needed.
 
-```bash
-wget https://cdn.pisugar.com/release/pisugar-power-manager.sh
-bash pisugar-power-manager.sh -c release
-```
-
-Select the correct PiSugar model when prompted. Verify it's running:
+Verify the PiSugar3 is visible on the I2C bus:
 
 ```bash
-sudo systemctl status pisugar-server
+sudo i2cdetect -y 1
 ```
 
-You can also check the web UI at `http://<pi-ip>:8421`.
+You should see devices at addresses `0x57` (PiSugar3 MCU) and `0x68` (DS3231 RTC).
+The `smbus2` package is installed in the venv (step 8).
 
 ## 5. Configure the PiSugar RTC
 
@@ -114,23 +112,6 @@ sudo update-rc.d -f fake-hwclock remove
 sudo systemctl disable fake-hwclock
 ```
 
-### Fix hwclock-set
-
-Edit `/lib/udev/hwclock-set` and comment out the systemd early-exit so the
-RTC is actually read on boot:
-
-```bash
-sudo nano /lib/udev/hwclock-set
-```
-
-Comment out these lines:
-
-```
-#if [ -e /run/systemd/system ] ; then
-# exit 0
-#fi
-```
-
 ### Set the RTC time
 
 Connect to WiFi (or set manually with `sudo date -s "2026-03-08 12:00:00"`),
@@ -144,6 +125,12 @@ sudo hwclock -r    # verify it reads back correctly
 After this, every boot will initialize the system clock from the RTC
 automatically — no network needed. The PiSugar's onboard battery keeps the
 RTC running for over a year.
+
+### Automatic RTC sync after NTP
+
+The `rtc-sync.service` (installed in step 12) runs `hwclock --systohc` once
+after `systemd-timesyncd` synchronizes the clock. This keeps the RTC accurate
+whenever the Pi is online — no manual `hwclock -w` needed after initial setup.
 
 ## 6. Clone the repository
 
@@ -182,7 +169,7 @@ Python. Use a venv:
 cd ~/obd
 python3 -m venv venv
 source venv/bin/activate
-pip install obd
+pip install obd smbus2
 ```
 
 All Python scripts have shebangs pointing at `~/obd/venv/bin/python3`, so the
@@ -243,8 +230,8 @@ cd ~/obd
 ./systemd/install
 ```
 
-This copies `obd.service` to `/etc/systemd/system/`, reloads systemd, and
-enables the service to start on boot.
+This copies `obd.service` and `rtc-sync.service` to `/etc/systemd/system/`,
+reloads systemd, and enables both services.
 
 ## 13. Install the crontab
 
@@ -255,6 +242,7 @@ crontab ~/obd/crontab
 This sets up:
 - Every 1 minute: `update` script (git pull, update crontab, sync data — skips if last success was <15 min ago)
 - Every 1 minute: `post-to-hass` (report sensors to Home Assistant)
+- Every 1 minute: `battery-check` (shut down if battery <20% and not charging)
 
 ## 14. Verify
 
@@ -294,14 +282,15 @@ On boot, the `obd` systemd service will:
 | `secret.sh` | Home Assistant API token (git-crypt encrypted) |
 | `crontab` | Cron schedule for CI and Home Assistant updates |
 | `systemd/obd.service` | Systemd unit — update `User`/`Group` if not using `trick` |
+| `systemd/rtc-sync.service` | Syncs system clock → DS3231 RTC after NTP sync |
 
 ## Troubleshooting
 
 **"No connection at all"** — Check that the ELM327 is powered, paired, trusted,
 and that `rfcomm0` is bound (`rfcomm` with no args shows bindings).
 
-**PiSugar connection refused** — Ensure `pisugar-server` is running:
-`sudo systemctl restart pisugar-server`
+**PiSugar I2C error** — Check that I2C is enabled (`sudo raspi-config` →
+Interface Options → I2C) and that `i2cdetect -y 1` shows `0x57`.
 
 **`pip install` fails with "externally managed environment"** — You must use
 a venv (step 8). Do not use `--break-system-packages`.

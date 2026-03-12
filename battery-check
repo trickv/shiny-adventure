@@ -1,0 +1,28 @@
+#!/home/trick/obd/venv/bin/python3
+
+"""Shut down the Pi if PiSugar battery is critically low.
+
+Intended to run from cron every minute. If the battery is below 20%,
+tells the PiSugar to cut power after the Pi shuts down (soft poweroff),
+then initiates a system shutdown.
+"""
+
+import subprocess
+import sys
+from pisugar import PiSugar2
+
+SHUTDOWN_THRESHOLD = 20
+
+pisugar = PiSugar2()
+pct = pisugar.get_battery_percentage().value
+charging = pisugar.get_charging_status().value
+
+if charging:
+    sys.exit(0)
+
+if pct >= SHUTDOWN_THRESHOLD:
+    sys.exit(0)
+
+print(f"Battery at {pct}% (threshold {SHUTDOWN_THRESHOLD}%), shutting down")
+pisugar.enable_soft_poweroff()
+subprocess.run(["sudo", "shutdown", "-h", "now"])

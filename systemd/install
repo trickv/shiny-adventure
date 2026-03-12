@@ -2,17 +2,23 @@
 
 cd $(dirname $(realpath $0))
 
-diff -u obd.service /etc/systemd/system/obd.service
-if [ $? -eq 0 ]; then
-    exit
+changed=0
+
+for unit in obd.service rtc-sync.service; do
+    diff -u "$unit" "/etc/systemd/system/$unit" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo "Installing $unit..."
+        sudo cp -pv "$unit" /etc/systemd/system/
+        changed=1
+    fi
+done
+
+if [ $changed -eq 1 ]; then
+    echo "Reloading systemd"
+    sudo systemctl daemon-reload
 fi
-
-echo "Installing aystemd changes..."
-sudo cp -pv obd.service /etc/systemd/system/
-
-echo "Reloading systemd"
-sudo systemctl daemon-reload
 
 echo "Enabling systemd services"
 # It seems normal for these to output an error, however they do succeed:
 sudo systemctl enable obd
+sudo systemctl enable rtc-sync

@@ -108,12 +108,6 @@ off and back on 30 seconds later.
 - PiSugar3 battery module (keeps the Pi alive briefly after the car turns off)
 - ELM327 Bluetooth OBD-II adapter
 
-## TODO
-
-- Replace bundled `pisugar/` library with the [`pisugar`](https://pypi.org/project/pisugar/)
-  PyPI package (v0.1.1+). The PyPI version has a cleaner `PiSugarServer` API
-  and covers more features (temperature, firmware version, tap handlers).
-
 ## Setup
 
 See [INSTALL.md](INSTALL.md) for full installation instructions.

@@ -1,374 +1,122 @@
 #!/home/trick/obd/venv/bin/python3
 
-# Written by Tisboyo - 10230718+tisboyo@users.noreply.github.com
+# PiSugar3 direct I2C interface — no pisugar-server daemon required.
+#
+# Reads battery status directly from the PiSugar3 MCU at I2C address 0x57.
+# Register map from: https://github.com/PiSugar/PiSugar/wiki/PiSugar-3-I2C-Datasheet
 
-# Used for interacting with PiSugar batteries (PiSugar2/3) from
-# https://www.pisugar.com/
-# Does require installing the PiSugar-Power-Manager software per PiSugars instructions
-
-# This library connects over tcp using a netcat like interaction
-# and supports all of the currently published commands.
-
-from __future__ import annotations
-import socket
 from collections import namedtuple
 from datetime import datetime
+import smbus2
+
+PISUGAR3_ADDR = 0x57
+I2C_BUS = 1
+
+# Registers
+REG_CTR1 = 0x02
+REG_CTR2 = 0x03
+REG_WRITE_ENABLE = 0x0B
+REG_VOLTAGE_H = 0x22
+REG_VOLTAGE_L = 0x23
+REG_PERCENTAGE = 0x2A
+
+# Software RTC registers (BCD encoded)
+REG_RTC_YY = 0x31
+REG_RTC_MM = 0x32
+REG_RTC_DD = 0x33
+REG_RTC_HH = 0x35
+REG_RTC_MN = 0x36
+REG_RTC_SS = 0x37
+
+Result = namedtuple("PiSugar", "name value command")
 
 
-class Netcat:
-
-    """ Python 'netcat like' module """
-
-    # Graciously borrowed from https://gist.github.com/leonjza/f35a7252babdf77c8421
-
-    def __init__(self, ip: str, port: int):
-
-        self.buff = ""
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.connect((ip, port))
-
-    def read(self, length: int = 1024) -> str:
-
-        """ Read 1024 bytes off the socket """
-
-        # Decode the returned byte string to a string and strip trailing whitespace
-        return self.socket.recv(length).decode("UTF-8").rstrip()
-
-    # Not currently used
-    # def read_until(self, data):
-
-    #     """ Read data into the buffer until we have data """
-
-    #     while not data in self.buff:
-    #         self.buff += self.socket.recv(1024)
-
-    #     pos = self.buff.find(data)
-    #     rval = self.buff[: pos + len(data)]
-    #     self.buff = self.buff[pos + len(data) :]
-
-    #     return rval
-
-    def write(self, data: str) -> None:
-
-        data = data.encode("UTF-8")
-        self.socket.send(data)
-
-    def close(self) -> None:
-
-        self.socket.close()
-
-    def query(self, data: str) -> str:
-        self.write(data)
-        return self.read()
-
-
-class InvalidRequest(Exception):
-    pass
+def _bcd_to_int(bcd):
+    return (bcd >> 4) * 10 + (bcd & 0x0F)
 
 
 class PiSugar2:
-    """Defaults to localhost on the default port but can specify ip and port"""
+    """Drop-in replacement using direct I2C instead of the TCP daemon.
 
-    def __init__(self, ip="127.0.0.1", port=8423):
-        self.netcat = Netcat(ip, port)
-        self._model = None
+    Keeps the PiSugar2 class name for compatibility with existing code.
+    """
 
-        # Create a named tuple
-        self.nt_values = namedtuple("PiSugar2", "name value command")
+    def __init__(self, bus=I2C_BUS, addr=PISUGAR3_ADDR):
+        self.bus = smbus2.SMBus(bus)
+        self.addr = addr
 
-    def _is_float(self, value):
-        # Check if a value passed is a float
-        try:
-            float(value)
-            return True
-        except ValueError:
-            return False
+    def _write_byte(self, reg, value):
+        """Write a byte with the required unlock/lock sequence."""
+        self.bus.write_byte_data(self.addr, REG_WRITE_ENABLE, 0x29)
+        self.bus.write_byte_data(self.addr, reg, value)
+        self.bus.write_byte_data(self.addr, REG_WRITE_ENABLE, 0x00)
 
-    def _nt(self, output: bytes, name: str = None) -> namedtuple:
-        """
-        Converts the provided values into a named tuple:
-            .name    = Name of the value
-            .value   = Value
-            .command = Command used to request informatino
-        """
+    def get_battery_percentage(self):
+        """Returns the current battery level percentage (0-100)."""
+        pct = self.bus.read_byte_data(self.addr, REG_PERCENTAGE)
+        return Result(name="percentage", value=float(pct), command="get battery")
 
-        # Check to make sure the request was valid
-        if output == "Invalid request.":
-            raise InvalidRequest
+    def get_voltage(self):
+        """Returns the current battery voltage in volts."""
+        vh = self.bus.read_byte_data(self.addr, REG_VOLTAGE_H)
+        vl = self.bus.read_byte_data(self.addr, REG_VOLTAGE_L)
+        voltage = ((vh << 8) | vl) / 1000.0
+        return Result(name="voltage", value=voltage, command="get battery_v")
 
-        # Split the values received into name and value
-        tup = tuple(output.split(": ", 1))
+    def get_charging_status(self):
+        """Returns whether external power is plugged in."""
+        ctr1 = self.bus.read_byte_data(self.addr, REG_CTR1)
+        plugged = bool(ctr1 & 0x80)
+        return Result(name="charging", value=plugged, command="get battery_charging")
 
-        # Set name to default if one not passed
-        if not name or name == "":
-            name = tup[0]
+    def get_rtc_time(self):
+        """Read the software RTC time from the PiSugar3 MCU."""
+        yy = _bcd_to_int(self.bus.read_byte_data(self.addr, REG_RTC_YY))
+        mm = _bcd_to_int(self.bus.read_byte_data(self.addr, REG_RTC_MM))
+        dd = _bcd_to_int(self.bus.read_byte_data(self.addr, REG_RTC_DD))
+        hh = _bcd_to_int(self.bus.read_byte_data(self.addr, REG_RTC_HH))
+        mn = _bcd_to_int(self.bus.read_byte_data(self.addr, REG_RTC_MN))
+        ss = _bcd_to_int(self.bus.read_byte_data(self.addr, REG_RTC_SS))
+        return Result(
+            name="rtc_time",
+            value=datetime(2000 + yy, mm, dd, hh, mn, ss),
+            command="get rtc_time",
+        )
 
-        # Set the value
-        if tup[1] == "false":
-            value = False
-        elif tup[1] == "true":
-            value = True
-        elif tup[1].isnumeric():
-            # A numeric value
-            value = int(tup[1])
-        elif self._is_float(tup[1]):
-            value = float(tup[1])
+    def get_auto_power_on(self):
+        """Check if auto power-on on external power restore is enabled."""
+        ctr1 = self.bus.read_byte_data(self.addr, REG_CTR1)
+        return Result(
+            name="auto_power_on",
+            value=bool(ctr1 & 0x10),
+            command="get auto_power_on",
+        )
+
+    def set_auto_power_on(self, enabled):
+        """Enable/disable auto power-on when external power is restored."""
+        ctr1 = self.bus.read_byte_data(self.addr, REG_CTR1)
+        if enabled:
+            ctr1 |= 0x10
         else:
-            try:
-                # If the return is a datetime object
-                value = datetime.fromisoformat(tup[1])
-            except ValueError:
-                # A string value
-                value = tup[1]
+            ctr1 &= ~0x10 & 0xFF
+        self._write_byte(REG_CTR1, ctr1)
 
-        # Assign them to a named tuple of .name and .value
-        values = self.nt_values(name=name, value=value, command=tup[0])
+    def enable_soft_poweroff(self):
+        """Tell the PiSugar to cut power after the Pi shuts down.
 
-        return values
-
-    def get_model(self) -> namedtuple:
-        """Returns the currently installed model number"""
-        # model: PiSugar 2 (4-LEDs)
-        # https://github.com/PiSugar/pisugar-power-manager-rs/blob/366ea0ca30ed88ffcf90dfe7c3092a74d97e02cc/pisugar-server/src/main.rs#L69
-        if not self._model:
-            # If we've already checked the model once, it hasn't changed.
-            output = self.netcat.query("get model")
-
-            self._model = self._nt(output)
-
-        return self._model
-
-    def get_battery_percentage(self) -> namedtuple:
-        """Returns the current battery level percentage"""
-        # battery: 84.52326
-        output = self.netcat.query("get battery")
-        return self._nt(output, "percentage")
-
-    def get_voltage(self) -> namedtuple:
-        """Returns the current battery voltage"""
-        # battery_v: 4.0150776
-        output = self.netcat.query("get battery_v")
-        return self._nt(output, "voltage")
-
-    def get_amperage(self) -> namedtuple:
-        """Returns the current battery amperage draw"""
-        # battery_i: 0.0040908856
-        output = self.netcat.query("get battery_i")
-
-        return self._nt(output, "amps")
-
-    def get_charging_status(self) -> namedtuple:
-        """Returns if the battery is currently charging"""
-        # battery_charging: false
-        output = self.netcat.query("get battery_charging")
-
-        return self._nt(output, "charging")
-
-    def get_time(self) -> namedtuple:
-        """Returns the time value with a datetime object as .value"""
-        # rtc_time: 2020-07-17T01:44:20+01:00
-        output = self.netcat.query("get rtc_time")
-
-        return self._nt(output, "time")
-
-    def get_alarm_enabled(self) -> namedtuple:
-        """Returns the status of alarm enable"""
-        # rtc_alarm_enabled: false
-        output = self.netcat.query("get rtc_alarm_enabled")
-
-        return self._nt(output, "alarm_enabled")
-
-    def get_alarm_time(self) -> namedtuple:
-        """Returns the time the alarm is set for"""
-        output = self.netcat.query("get rtc_alarm_time")
-
-        return self._nt(output, "alarm_time")
-
-    def get_alarm_repeat(self) -> namedtuple:
-        """Returns alarm repeat value"""
-        output = self.netcat.query("get alarm_repeat")
-        return self._nt(output)
-
-    def get_button_enable(self, press: str) -> namedtuple:
+        Sets bit 4 of CTR2. The MCU monitors I2C; once the Pi stops
+        communicating it cuts power automatically.
         """
-        Returns the status of enabled buttons
-        press = "single", "double", or "long"
-        """
-        if press.lower() in ["single", "double", "long"]:
-            output = self.netcat.query(f"get button_enable {press}")
-            nt = namedtuple("ButtonEnable", "name value command")
-
-            value = True if output.split(" ")[2] == "true" else False
-
-            return nt(f"button_enable_{press}", value, "button_enable")
-        else:
-            raise InvalidRequest
-
-    def get_button_shell(self, press: str) -> namedtuple:
-        """
-        Returns the script for when a button is clicked
-        press = "single", "double", or "long"
-        """
-        if press.lower() in ["single", "double", "long"]:
-            output = self.netcat.query(f"get button_shell {press}")
-            # Use a custom namedtuple instead of the normal one, so we get to do all the work here
-            nt = namedtuple("ButtonShell", "name value command shell")
-
-            split = output.split(" ", 2)
-            name = split[0]
-            value = split[1]
-            command = f"button_shell_{press}"
-
-            try:
-                shell = split[2]
-            except IndexError:
-                shell = None
-
-            return nt(name, value, command, shell)
-        else:
-            raise InvalidRequest
-
-    def get_safe_shutdown_level(self) -> namedtuple:
-        """Returns the safe shutdown level in percentage of battery"""
-        output = self.netcat.query("get safe_shutdown_level")
-        return self._nt(output)
-
-    def get_battery_allow_charging(self) -> namedtuple:
-        """Returns whether the charging usb is plugged (new model only)"""
-        output = self.netcat.query("get battery_allow_charging")
-        return self._nt(output)
-
-    def get_battery_power_plugged(self) -> namedtuple:
-        """Returns whether the charging usb is plugged (new model only)"""
-        output = self.netcat.query("get battery_power_plugged")
-        return self._nt(output)
-
-    def get_battery_led_amount(self) -> namedtuple:
-        """Returns the charging indicate led amount, 4 for old model, 2 for new model"""
-        output = self.netcat.query("get battery_led_amount")
-        return self._nt(output)
-
-    def get_safe_shutdown_delay(self) -> namedtuple:
-        """Returns the safe shutdown delay in seconds"""
-        output = self.netcat.query("get safe_shutdown_delay")
-        return self._nt(output)
-
-    def set_rtc_from_pi(self) -> namedtuple:
-        """Sets the RTC to the current time on the Pi"""
-        output = self.netcat.query("rtc_pi2rtc")
-        return self._nt(output)
-
-    def set_pi_from_rtc(self) -> namedtuple:  # Upstream not working
-        """Sets the Pi clock to the RTC value"""
-        output = self.netcat.query("rtc_rtc2pi")
-        return self._nt(output)
-
-    def set_time_from_web(self) -> namedtuple:
-        # Not working (may depend on systemd-timesyncd.service )
-        """Sets the RTC and Pi clock from the web"""
-        output = self.netcat.query("rtc_web")
-        return self._nt(output)
-
-    def set_rtc_alarm(
-        self, time: datetime.datetime, repeat: list = [0, 0, 0, 0, 0, 0, 0]
-    ) -> namedtuple:
-        """Sets the alarm time
-        time = datetime.datetime object
-        repeat = list(0,0,0,0,0,0,0) with each value being 0 or 1 for Sunday-Saturday
-        """
-
-        timestr = datetime.isoformat(time)
-
-        if not datetime.utcoffset(time):
-            timestr += "+00:00"
-
-        # Build repeat string
-        s = str()
-        for x in repeat:
-            # Only accept 0 or 1
-            if x in [0, 1]:
-                s += str(x)
-            else:
-                raise ValueError
-
-        repeat_dec = int(s, 2)  # Convert the string to decimal from binary
-
-        print(f"rtc_alarm_set {timestr} {repeat_dec}")
-        output = self.netcat.query(f"rtc_alarm_set {timestr} {repeat_dec}")
-        return self._nt(output)
-
-    def disable_alarm(self) -> namedtuple:
-        """Disable the RTC alarm"""
-        output = self.netcat.query("rtc_alarm_disable")
-        return self._nt(output)
-
-    def set_button_enable(self, press: str, enable: bool = True) -> namedtuple:
-        """
-        Enables the button press
-        press = single, double or long
-        enable = True/False, defaults to True
-        """
-
-        if press.lower() in ["single", "double", "long"]:
-
-            output = self.netcat.query(f"set_button_enable {press} {int(enable)}")
-            return self._nt(output)
-
-        else:
-            raise InvalidRequest
-
-    def set_button_shell(
-        self, press: str, shell: str, enable: bool = True
-    ) -> namedtuple:
-        """
-        Sets the shell command to run when the button is pressed
-        press = single, double or long
-        shell = shell command to run, "sudo shutdown now"
-        enable = True/False/None to enable the command, defaults to True, None for no change.
-        """
-
-        if press.lower() in ["single", "double", "long"]:
-            if enable is not None:
-                self.netcat.query(f"set_button_enable {press} {int(enable)}")
-
-            output = self.netcat.query(f"set_button_shell {press} {shell}")
-
-            return self._nt(output)
-
-        else:
-            raise InvalidRequest
-
-    def set_safe_shutdown_level(self, level: int):
-        """Set the battery percentage safe shutdown level max: 30"""
-        level = int(level)
-        if level > 30 or level < 0:
-            raise InvalidRequest
-
-        output = self.netcat.query(f"set_safe_shutdown_level {level}")
-        return self._nt(output)
-
-    def set_safe_shutdown_delay(self, delay: int):
-        """Set the battery safe shutdown delay in seconds max: 120"""
-        delay = int(delay)
-        if level > 120 or level < 0:
-            raise InvalidRequest
-
-        output = self.netcat.query(f"set_safe_shutdown_delay {delay}")
-        return self._nt(output)
+        ctr2 = self.bus.read_byte_data(self.addr, REG_CTR2)
+        ctr2 &= 0b1110_0000  # clear low bits
+        ctr2 |= 0b0001_0000  # set soft poweroff bit
+        self._write_byte(REG_CTR2, ctr2)
 
 
 if __name__ == "__main__":
     pisugar = PiSugar2()
-    print(f"{pisugar.get_model()}")
-    print(f"{pisugar.get_battery_percentage()}")
-    print(f"{pisugar.get_voltage()}")
-    print(f"{pisugar.get_amperage()}")
-    print(f"{pisugar.get_charging_status()}")
-    print(f"{pisugar.get_time()}")
-    print(f"{pisugar.get_alarm_enabled()}")
-    print(f"{pisugar.get_alarm_time()}")
-    print(f"{pisugar.get_alarm_repeat()}")
-    print(f"{pisugar.get_button_enable('single')}")
-    print(f"{pisugar.get_button_shell('single')}")
-    print(f"{pisugar.get_safe_shutdown_level()}")
-    print(f"{pisugar.get_safe_shutdown_delay()}")
+    print(f"Battery:       {pisugar.get_battery_percentage().value}%")
+    print(f"Voltage:       {pisugar.get_voltage().value}V")
+    print(f"Charging:      {pisugar.get_charging_status().value}")
+    print(f"RTC time:      {pisugar.get_rtc_time().value}")
+    print(f"Auto power-on: {pisugar.get_auto_power_on().value}")
