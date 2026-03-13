@@ -2,14 +2,14 @@
 
 """Tell the PiSugar MCU to cut power after the Pi finishes shutting down.
 
-Runs as a systemd oneshot at shutdown. Sets a 3-second delay timer,
+Runs as a systemd oneshot at shutdown. Sets a 30-second delay timer,
 then disables the MCU's 5V output. The MCU waits for the countdown
-before actually cutting power, so the Pi can finish its shutdown
-cleanly.
+before actually cutting power, giving the Pi plenty of time to
+unmount filesystems cleanly (Pi Zero is slow to shut down).
 """
 
 from pisugar import PiSugar3
 
 pisugar = PiSugar3()
-pisugar.poweroff(delay_seconds=3)
-print("PiSugar poweroff scheduled (3s delay)")
+pisugar.poweroff(delay_seconds=30)
+print("PiSugar poweroff scheduled (30s delay)")
