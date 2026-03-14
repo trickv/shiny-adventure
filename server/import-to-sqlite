@@ -41,6 +41,7 @@ NUMERIC_COLUMNS = [
     "throttle_pct", "intake_temp_c", "maf_gps", "timing_advance_deg",
     "fuel_level_pct", "run_time_sec", "baro_kpa", "fuel_rate_lph",
     "elm_voltage", "mpg", "pisugar_battery_pct",
+    "poll_time_ms", "sensors_collected", "error_count",
 ]
 
 
@@ -65,7 +66,10 @@ def init_db(db):
             elm_voltage    REAL,
             mpg            REAL,
             pisugar_charging INTEGER,
-            pisugar_battery_pct REAL
+            pisugar_battery_pct REAL,
+            poll_time_ms   REAL,
+            sensors_collected INTEGER,
+            error_count    INTEGER
         );
 
         CREATE INDEX IF NOT EXISTS idx_readings_drive ON readings(drive_id);
