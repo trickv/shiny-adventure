@@ -111,14 +111,15 @@ class PiSugar3:
             ctr1 &= ~CTR1_AUTO_POWER_ON & 0xFF
         self._write_byte(REG_CTR1, ctr1)
 
-    def poweroff(self, delay_seconds=3):
+    def poweroff(self, delay_seconds=10):
         """Tell the PiSugar MCU to cut output power and hibernate.
 
         Enables auto-hibernate so the MCU enters low-power sleep after
         output is disabled (LED off, ~0 draw). In hibernate, the power
         button, external power detection (auto-power-on), and RTC alarms
-        still work. Sets a countdown timer, then disables both output
-        switches (bit 5 delayed, bit 2 immediate).
+        still work. Sets a countdown timer, then clears only bit 5
+        (OUTPUT_ENABLE) which uses the delay. Bit 2 (OUTPUT_SWITCH) is
+        left alone as it cuts power immediately, bypassing the delay.
         """
         # Enable auto-hibernate: MCU sleeps after output is cut
         ctr2 = self.bus.read_byte_data(self.addr, REG_CTR2)
@@ -127,7 +128,7 @@ class PiSugar3:
 
         self._write_byte(REG_SHUTDOWN_DELAY, delay_seconds)
         ctr1 = self.bus.read_byte_data(self.addr, REG_CTR1)
-        ctr1 &= ~(CTR1_OUTPUT_ENABLE | CTR1_OUTPUT_SWITCH) & 0xFF
+        ctr1 &= ~CTR1_OUTPUT_ENABLE & 0xFF
         self._write_byte(REG_CTR1, ctr1)
 
 

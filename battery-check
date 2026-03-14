@@ -9,18 +9,26 @@ systemd service handles telling the MCU to cut power.
 
 import subprocess
 import sys
+from datetime import datetime
 from pisugar import PiSugar3
 
 SHUTDOWN_THRESHOLD = 20
+LOG = "/home/trick/log/battery.log"
 
 pisugar = PiSugar3()
+charging = pisugar.get_charging_status().value
+pct = pisugar.get_battery_percentage().value
+voltage = pisugar.get_voltage().value
 
-if pisugar.get_charging_status().value:
+ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+with open(LOG, "a") as f:
+    f.write(f"{ts} battery={pct}% voltage={voltage}V charging={charging}\n")
+
+if charging:
     sys.exit(0)
 
-pct = pisugar.get_battery_percentage().value
 if pct >= SHUTDOWN_THRESHOLD:
     sys.exit(0)
 
-print(f"Battery at {pct}% (threshold {SHUTDOWN_THRESHOLD}%), shutting down")
+print(f"Battery at {pct}% voltage={voltage}V (threshold {SHUTDOWN_THRESHOLD}%), shutting down")
 subprocess.run(["sudo", "shutdown", "-h", "now"])
