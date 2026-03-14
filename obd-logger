@@ -93,9 +93,7 @@ def check_dtcs(connection):
 
 
 def is_shutdown_pending():
-    result = subprocess.run(["sudo", "shutdown", "--show"],
-                            capture_output=True, text=True)
-    return result.returncode == 0 and "Shutdown scheduled" in result.stdout
+    return os.path.exists("/run/systemd/shutdown/scheduled")
 
 
 def schedule_shutdown_if_needed():
