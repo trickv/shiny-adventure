@@ -173,7 +173,7 @@ try:
     # Set up CSV logging
     csv_path = os.path.join(LOG_DIR, f"obd-{datetime.now():%Y%m%d-%H%M%S}.csv")
     csv_file = open(csv_path, "w", newline="")
-    csv_columns = ["timestamp"] + [col for _, col in ALL_SENSORS] + ["mpg", "pisugar_charging", "pisugar_battery_pct"]
+    csv_columns = ["timestamp"] + [col for _, col in ALL_SENSORS] + ["mpg", "pisugar_charging", "pisugar_battery_pct", "poll_time_ms", "sensors_collected", "error_count"]
     csv_writer = csv.DictWriter(csv_file, fieldnames=csv_columns)
     csv_writer.writeheader()
     log_event("csv_logging_started", path=csv_path)
@@ -203,20 +203,36 @@ try:
         row = {"timestamp": datetime.now().isoformat()}
 
         # Query ECU sensors — these determine car-on/off
+        poll_start = time.monotonic()
         ecu_got_data = False
+        sensors_collected = 0
+        error_count = 0
         for cmd, col in active_ecu_sensors:
-            response = connection.query(cmd)
-            if not response.is_null():
-                val = response.value
-                row[col] = val.magnitude if hasattr(val, 'magnitude') else val
-                ecu_got_data = True
+            try:
+                response = connection.query(cmd)
+                if not response.is_null():
+                    val = response.value
+                    row[col] = val.magnitude if hasattr(val, 'magnitude') else val
+                    ecu_got_data = True
+                    sensors_collected += 1
+            except Exception:
+                error_count += 1
 
         # Query adapter sensors — always respond, don't affect car-on/off
         for cmd, col in active_adapter_sensors:
-            response = connection.query(cmd)
-            if not response.is_null():
-                val = response.value
-                row[col] = val.magnitude if hasattr(val, 'magnitude') else val
+            try:
+                response = connection.query(cmd)
+                if not response.is_null():
+                    val = response.value
+                    row[col] = val.magnitude if hasattr(val, 'magnitude') else val
+                    sensors_collected += 1
+            except Exception:
+                error_count += 1
+
+        poll_time_ms = round((time.monotonic() - poll_start) * 1000, 1)
+        row["poll_time_ms"] = poll_time_ms
+        row["sensors_collected"] = sensors_collected
+        row["error_count"] = error_count
 
         # Compute instantaneous MPG from MAF and speed
         # MPG = (speed_kmh * 7.718) / MAF_gps
