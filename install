@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+#
+# First-time setup for obd-logger on a new Raspberry Pi.
+#
+# This script:
+#   1. Scans for ELM327 Bluetooth adapters
+#   2. Pairs and trusts the selected adapter
+#   3. Saves the MAC to bt-addr
+#   4. Creates the Python venv and installs dependencies
+#   5. Binds RFCOMM and verifies OBD communication
+#   6. Installs systemd services and crontab
+#
+# Prerequisites:
+#   - System packages from INSTALL.md step 2 are installed
+#   - I2C is enabled (for PiSugar)
+#   - ELM327 adapter is plugged into the car's OBD port and car ignition is ON
+#
+# Usage: ./install
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+echo "=== obd-logger install ==="
+echo ""
+
+# --- Step 1: Check prerequisites ---
+
+echo "[1/6] Checking prerequisites..."
+
+missing=()
+for cmd in bluetoothctl rfcomm python3 git; do
+    if ! command -v "$cmd" &>/dev/null; then
+        missing+=("$cmd")
+    fi
+done
+if [ ${#missing[@]} -gt 0 ]; then
+    echo "ERROR: Missing commands: ${missing[*]}"
+    echo "Install system packages first (see INSTALL.md step 2)."
+    exit 1
+fi
+
+if [ -f bt-addr ]; then
+    existing_mac=$(cat bt-addr)
+    echo "WARNING: bt-addr already exists with MAC: $existing_mac"
+    read -p "Re-run Bluetooth setup? [y/N] " yn
+    if [[ ! "$yn" =~ ^[Yy] ]]; then
+        echo "Keeping existing bt-addr. Skipping to venv setup..."
+        skip_bt=1
+    fi
+fi
+skip_bt=${skip_bt:-0}
+
+# --- Step 2: Scan for ELM327 Bluetooth devices ---
+
+if [ "$skip_bt" -eq 0 ]; then
+    echo ""
+    echo "[2/6] Scanning for Bluetooth devices..."
+    echo "Make sure your ELM327 adapter is powered on (plugged into the car, ignition ON)."
+    echo "Scanning for 15 seconds..."
+    echo ""
+
+    # Power on Bluetooth and scan
+    bluetoothctl power on >/dev/null 2>&1 || true
+    bluetoothctl agent on >/dev/null 2>&1 || true
+    bluetoothctl default-agent >/dev/null 2>&1 || true
+
+    # Scan in background for 15 seconds
+    timeout 15 bluetoothctl scan on >/dev/null 2>&1 || true
+
+    # List discovered devices
+    echo "Discovered devices:"
+    echo ""
+    mapfile -t devices < <(bluetoothctl devices | grep -i "Device")
+    if [ ${#devices[@]} -eq 0 ]; then
+        echo "ERROR: No Bluetooth devices found."
+        echo "Make sure the ELM327 is powered and in range."
+        exit 1
+    fi
+
+    for i in "${!devices[@]}"; do
+        echo "  [$i] ${devices[$i]}"
+    done
+    echo ""
+
+    # Let the user pick
+    read -p "Enter the number of your ELM327 adapter: " choice
+    if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -ge "${#devices[@]}" ]; then
+        echo "ERROR: Invalid selection."
+        exit 1
+    fi
+
+    # Extract MAC from "Device AA:BB:CC:DD:EE:FF Name"
+    selected="${devices[$choice]}"
+    BT_MAC=$(echo "$selected" | awk '{print $2}')
+    BT_NAME=$(echo "$selected" | cut -d' ' -f3-)
+
+    echo ""
+    echo "Selected: $BT_NAME ($BT_MAC)"
+    echo ""
+
+    # --- Step 3: Pair and trust ---
+
+    echo "[3/6] Pairing with $BT_MAC..."
+    echo "(Default PIN for most ELM327 adapters is 1234)"
+
+    bluetoothctl pair "$BT_MAC" || {
+        echo "Pairing failed. You may need to enter PIN 1234 when prompted."
+        echo "Try running: bluetoothctl pair $BT_MAC"
+        exit 1
+    }
+    bluetoothctl trust "$BT_MAC"
+    echo "Paired and trusted."
+
+    # Save MAC
+    echo "$BT_MAC" > bt-addr
+    echo "Saved MAC to bt-addr: $BT_MAC"
+else
+    BT_MAC=$(cat bt-addr)
+    echo ""
+    echo "[2/6] Skipping Bluetooth scan (using existing MAC: $BT_MAC)"
+    echo "[3/6] Skipping pairing (using existing MAC: $BT_MAC)"
+fi
+
+# --- Step 4: Python venv ---
+
+echo ""
+echo "[4/6] Setting up Python virtual environment..."
+
+if [ ! -d venv ]; then
+    python3 -m venv venv
+    echo "Created venv."
+fi
+venv/bin/pip install -q --upgrade obd smbus2
+echo "Dependencies installed."
+
+# --- Step 5: Verify OBD communication ---
+
+echo ""
+echo "[5/6] Verifying OBD communication..."
+
+# Release any existing binding
+sudo rfcomm release rfcomm0 2>/dev/null || true
+sudo rfcomm bind rfcomm0 "$BT_MAC"
+echo "Bound rfcomm0 to $BT_MAC"
+
+# Quick connection test using Python
+echo "Testing OBD connection (car ignition must be ON)..."
+venv/bin/python3 -u -c "
+import obd
+import sys
+
+obd.logger.setLevel(obd.logging.WARNING)
+
+print('Connecting to /dev/rfcomm0...')
+conn = obd.OBD('/dev/rfcomm0', baudrate=38400)
+status = conn.status()
+print(f'Connection status: {status}')
+
+if status == obd.OBDStatus.NOT_CONNECTED:
+    print('ERROR: Could not connect to ELM327.')
+    print('Check that the adapter is plugged in and powered.')
+    conn.close()
+    sys.exit(1)
+
+# Read ELM version
+r = conn.query(obd.commands.ELM_VERSION)
+print(f'ELM version: {r.value}')
+
+# Read voltage
+r = conn.query(obd.commands.ELM_VOLTAGE)
+print(f'Battery voltage: {r.value}')
+
+# Try VIN
+try:
+    r = conn.query(obd.commands.VIN)
+    if not r.is_null() and r.value:
+        print(f'VIN: {r.value}')
+    else:
+        print('VIN: not available (this is OK — some adapters/cars do not support it)')
+except Exception as e:
+    print(f'VIN query failed: {e} (this is OK)')
+
+if status == obd.OBDStatus.CAR_CONNECTED:
+    # Car is on — read some ECU data
+    r = conn.query(obd.commands.RPM)
+    if not r.is_null():
+        print(f'RPM: {r.value}')
+    r = conn.query(obd.commands.COOLANT_TEMP)
+    if not r.is_null():
+        print(f'Coolant temp: {r.value}')
+    print('ECU communication verified!')
+else:
+    print('ELM327 connected but car ignition appears OFF.')
+    print('Adapter communication verified. ECU data will be available when the car is running.')
+
+conn.close()
+print()
+print('OBD verification complete.')
+"
+
+verify_status=$?
+sudo rfcomm release rfcomm0 2>/dev/null || true
+
+if [ $verify_status -ne 0 ]; then
+    echo ""
+    echo "WARNING: OBD verification failed. The adapter may not be reachable."
+    echo "You can re-run this script later or troubleshoot manually."
+    read -p "Continue with installation anyway? [y/N] " yn
+    if [[ ! "$yn" =~ ^[Yy] ]]; then
+        exit 1
+    fi
+fi
+
+# --- Step 6: Install systemd services and crontab ---
+
+echo ""
+echo "[6/6] Installing systemd services and crontab..."
+
+mkdir -p ~/log
+
+./systemd/install
+crontab crontab
+echo "Crontab installed."
+
+echo ""
+echo "=== Installation complete ==="
+echo ""
+echo "Summary:"
+echo "  ELM327 MAC:  $BT_MAC"
+echo "  bt-addr:     $(pwd)/bt-addr"
+echo "  Venv:        $(pwd)/venv"
+echo "  Log dir:     ~/log"
+echo ""
+echo "The obd service will start automatically on next boot."
+echo "To start it now:  sudo systemctl start obd"
+echo ""
+echo "Optional: To enable Home Assistant integration, set up secret.sh"
+echo "  (see INSTALL.md step 7). This is only needed for debugging."

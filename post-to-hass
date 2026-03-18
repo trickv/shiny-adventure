@@ -4,6 +4,12 @@ set -u
 set -e
 
 cd $HOME/obd
+
+# Home Assistant integration is optional — only used for debugging by one user.
+# If secret.sh is missing or hasn't been decrypted via git-crypt, skip silently.
+if [ ! -f secret.sh ] || head -1 secret.sh | grep -q '^\x00'; then
+    exit 0
+fi
 source secret.sh
 
 HASS_URL="https://hass.vanstaveren.us/api/states"

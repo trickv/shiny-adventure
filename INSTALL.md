@@ -7,9 +7,9 @@ Raspberry Pi running Raspberry Pi OS based on Debian Trixie (13).
 
 - Raspberry Pi (Zero, 3, 4, or 5)
 - [PiSugar3 battery module](https://www.pisugar.com/) attached to the Pi
-- ELM327 Bluetooth OBD-II adapter (this project uses MAC `00:1D:A5:03:62:B2` —
-  update `bt-addr` file if yours differs)
-- WiFi connectivity (for Home Assistant reporting and data sync)
+- ELM327 Bluetooth OBD-II adapter (any compatible adapter — the install script
+  will scan and pair with it)
+- WiFi connectivity (for data sync; Home Assistant integration is optional)
 
 ## 1. Base OS setup
 
@@ -142,71 +142,10 @@ git clone https://github.com/trickv/obd-logger obd
 cd obd
 ```
 
-## 7. Unlock secrets with git-crypt
-
-`secret.sh` contains the Home Assistant API token and is encrypted with
-git-crypt. You need the symmetric key to unlock it:
-
-```bash
-git-crypt unlock /path/to/git-crypt-key
-```
-
-If you don't have the key file, you'll need to recreate `secret.sh` manually:
-
-```bash
-cat > secret.sh << 'EOF'
-export hass_llac="YOUR_HOME_ASSISTANT_LONG_LIVED_ACCESS_TOKEN"
-EOF
-chmod 600 secret.sh
-```
-
-## 8. Python virtual environment
-
-The `update` cron job automatically creates the venv and keeps packages
-up to date on every run. For initial setup (before cron is installed),
-bootstrap it manually:
-
-```bash
-cd ~/obd
-python3 -m venv venv
-venv/bin/pip install obd smbus2
-```
-
-All Python scripts have shebangs pointing at `~/obd/venv/bin/python3`, so the
-venv is used automatically — no need to activate it before running scripts.
-
-## 9. Pair the ELM327 Bluetooth adapter
-
-Power on the ELM327 adapter (plug it into the car's OBD port and turn the
-ignition to ON).
-
-```bash
-bluetoothctl
-```
-
-Inside bluetoothctl:
-```
-power on
-agent on
-default-agent
-scan on
-```
-
-Wait for the ELM327 MAC to appear (should match the address in the `bt-addr` file:
-`00:1D:A5:03:62:B2`). Then:
-
-```
-pair 00:1D:A5:03:62:B2
-trust 00:1D:A5:03:62:B2
-exit
-```
-
-The default PIN for most ELM327 adapters is `1234`.
-
-## 10. Configure sudo permissions
+## 7. Configure sudo permissions
 
 `obd-logger` calls `sudo rfcomm`, `sudo shutdown`, etc. without a password.
-Add a sudoers rule:
+Add a sudoers rule (change `trick` to your username):
 
 ```bash
 sudo visudo -f /etc/sudoers.d/obd
@@ -217,28 +156,54 @@ Add:
 trick ALL=(ALL) NOPASSWD: /usr/bin/rfcomm, /usr/sbin/shutdown
 ```
 
-## 11. Install the systemd service
+## 8. Run the install script
+
+The install script handles Bluetooth pairing, venv setup, OBD verification,
+systemd services, and crontab in one step.
+
+**Important:** The ELM327 adapter must be plugged into the car's OBD port
+and the ignition must be ON.
 
 ```bash
 cd ~/obd
-./systemd/install
+./install
 ```
 
-This copies `obd.service`, `rtc-sync.service`, and `pisugar-poweroff.service`
-to `/etc/systemd/system/`, reloads systemd, and enables all three.
+The script will:
+1. Scan for Bluetooth devices and let you select your ELM327 adapter
+2. Pair and trust the adapter (default PIN is `1234`)
+3. Save the adapter's MAC address to `bt-addr` (this file is per-device,
+   not checked into git)
+4. Create a Python venv and install dependencies
+5. Verify OBD communication (reads ELM version, voltage, VIN, and ECU data)
+6. Install systemd services and crontab
 
-## 12. Install the crontab
-
-```bash
-crontab ~/obd/crontab
-```
-
-This sets up:
+The crontab sets up:
 - Every 1 minute: `update` script (git pull, update crontab, sync data — skips if last success was <15 min ago)
-- Every 1 minute: `post-to-hass` (report sensors to Home Assistant)
+- Every 1 minute: `post-to-hass` (report sensors to Home Assistant — skipped if `secret.sh` is not configured)
 - Every 1 minute: `battery-check` (shut down if battery <20% and not charging)
 
-## 13. Verify
+## 9. (Optional) Home Assistant integration
+
+The Home Assistant integration is optional and only used for debugging.
+If you want it, unlock `secret.sh` with git-crypt:
+
+```bash
+git-crypt unlock /path/to/git-crypt-key
+```
+
+Or create it manually:
+
+```bash
+cat > secret.sh << 'EOF'
+export hass_llac="YOUR_HOME_ASSISTANT_LONG_LIVED_ACCESS_TOKEN"
+EOF
+chmod 600 secret.sh
+```
+
+If `secret.sh` is absent or not decrypted, `post-to-hass` exits silently.
+
+## 10. Verify
 
 ```bash
 # Check systemd service
@@ -250,13 +215,9 @@ crontab -l
 # Test PiSugar connection
 cd ~/obd
 ./battery.py
-
-# Test Bluetooth RFCOMM binding (car must be on)
-sudo rfcomm bind rfcomm0 $(cat ~/obd/bt-addr)
-ls -l /dev/rfcomm0
 ```
 
-## 14. Reboot and go
+## 11. Reboot and go
 
 ```bash
 sudo reboot
@@ -272,9 +233,9 @@ On boot, the `obd` systemd service will:
 
 | File | Purpose |
 |------|---------|
-| `bt-addr` | ELM327 Bluetooth MAC address — update if your adapter differs |
-| `secret.sh` | Home Assistant API token (git-crypt encrypted) |
-| `crontab` | Cron schedule for CI and Home Assistant updates |
+| `bt-addr` | ELM327 Bluetooth MAC address (created by `./install`, per-device, not in git) |
+| `secret.sh` | Home Assistant API token (git-crypt encrypted, optional) |
+| `crontab` | Cron schedule for updates, Home Assistant, and battery checks |
 | `systemd/obd.service` | Systemd unit — update `User`/`Group` if not using `trick` |
 | `systemd/rtc-sync.service` | Syncs system clock → DS3231 RTC after NTP sync |
 | `systemd/pisugar-poweroff.service` | Tells PiSugar MCU to cut power at shutdown |

@@ -82,12 +82,19 @@ def init_db(db):
             row_count  INTEGER NOT NULL
         );
     """)
-    # Add vin and bt_mac columns if they don't exist yet (migration for existing DBs)
-    for col in ("vin", "bt_mac"):
-        try:
-            db.execute(f"ALTER TABLE drives ADD COLUMN {col} TEXT")
-        except sqlite3.OperationalError:
-            pass  # column already exists
+    # Add vin and bt_mac columns if they don't exist yet (migration for existing DBs).
+    # Denormalized onto readings too so Grafana can filter by device without JOINs.
+    for table in ("drives", "readings"):
+        for col in ("vin", "bt_mac"):
+            try:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+    # Index for Grafana device filtering
+    try:
+        db.execute("CREATE INDEX IF NOT EXISTS idx_readings_bt_mac ON readings(bt_mac)")
+    except sqlite3.OperationalError:
+        pass
 
 
 def parse_csv_metadata(csv_path):
@@ -148,7 +155,8 @@ def import_csv(db, csv_path):
             except (ValueError, TypeError):
                 skipped += 1
                 continue
-            values = {"drive_id": drive_id, "timestamp": ts, "time_unix": time_unix}
+            values = {"drive_id": drive_id, "timestamp": ts, "time_unix": time_unix,
+                      "vin": vin, "bt_mac": bt_mac}
 
             for col in NUMERIC_COLUMNS:
                 raw = row.get(col, "")

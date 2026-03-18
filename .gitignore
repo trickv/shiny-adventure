@@ -2,3 +2,7 @@
 .claude/commands/
 .logs/
 .beads/
+
+# Per-device config created by ./install
+bt-addr
+venv/

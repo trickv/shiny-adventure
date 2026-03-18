@@ -10,3 +10,4 @@ syntax:
 	bash -n update
 	bash -n post-to-hass
 	bash -n sync-data
+	bash -n install
