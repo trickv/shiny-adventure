@@ -39,7 +39,8 @@ if [ -n "$latest_csv" ]; then
     post_sensor "obd_latest_drive" "obd latest drive" "$csv_name"
 
     # Drive duration: difference between first and last timestamp in the CSV
-    first_ts=$(sed -n '2p' "$latest_csv" | cut -d, -f1)
+    # Skip any # comment lines at the top of the CSV
+    first_ts=$(grep -v '^#' "$latest_csv" | sed -n '2p' | cut -d, -f1)
     last_ts=$(tail -1 "$latest_csv" | cut -d, -f1)
     if [ -n "$first_ts" ] && [ -n "$last_ts" ]; then
         first_epoch=$(date -d "$first_ts" +%s 2>/dev/null || echo "")
@@ -51,8 +52,8 @@ if [ -n "$latest_csv" ]; then
         fi
     fi
 
-    # Latest readings from the CSV
-    header=$(head -1 "$latest_csv")
+    # Latest readings from the CSV (skip # comment lines)
+    header=$(grep -v '^#' "$latest_csv" | head -1)
     last_line=$(tail -1 "$latest_csv")
     # Find column indices (1-based for cut)
     coolant_col=$(echo "$header" | tr ',' '\n' | grep -n '^coolant_temp_c$' | cut -d: -f1)
@@ -72,8 +73,8 @@ if [ -n "$latest_csv" ]; then
         fi
     fi
 
-    # Row count (data points logged)
-    row_count=$(( $(wc -l < "$latest_csv") - 1 ))
+    # Row count (data points logged, excluding comments and header)
+    row_count=$(( $(grep -cv '^#' "$latest_csv") - 1 ))
     post_sensor "obd_drive_data_points" "obd drive data points" "$row_count"
 
     # Total drive count

@@ -93,9 +93,14 @@ def read_last_line(path):
 
 def parse_coolant(csv_path):
     """Get coolant temp and timestamp from the last line of the CSV."""
-    # Read header to find column indices
+    # Read header to find column indices (skip any # comment lines)
     with open(csv_path) as f:
-        header = f.readline().strip().split(",")
+        for line in f:
+            if not line.startswith("#"):
+                header = line.strip().split(",")
+                break
+        else:
+            return None, None
 
     ts_idx = header.index("timestamp")
     try:

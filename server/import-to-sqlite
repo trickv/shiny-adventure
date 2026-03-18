@@ -82,19 +82,48 @@ def init_db(db):
             row_count  INTEGER NOT NULL
         );
     """)
+    # Add vin and bt_mac columns if they don't exist yet (migration for existing DBs)
+    for col in ("vin", "bt_mac"):
+        try:
+            db.execute(f"ALTER TABLE drives ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+
+def parse_csv_metadata(csv_path):
+    """Read # comment lines at the top of a CSV and return metadata dict."""
+    metadata = {}
+    with open(csv_path) as f:
+        for line in f:
+            if line.startswith("#"):
+                # Parse "# KEY: VALUE" lines
+                content = line.lstrip("#").strip()
+                if ": " in content:
+                    key, value = content.split(": ", 1)
+                    metadata[key.strip()] = value.strip()
+            else:
+                break
+    return metadata
 
 
 def import_csv(db, csv_path):
     filename = os.path.basename(csv_path)
-    # drive_id is the filename without extension, e.g. "obd-20260306-164722"
+    # drive_id is the filename without extension, e.g. "obd-20260306-164722-001DA50362B2"
     drive_id = os.path.splitext(filename)[0]
+
+    # Parse metadata comments at top of CSV (VIN, BT_MAC)
+    metadata = parse_csv_metadata(csv_path)
+    vin = metadata.get("VIN")
+    bt_mac = metadata.get("BT_MAC")
 
     # Check if already imported
     existing = db.execute(
         "SELECT row_count FROM drives WHERE drive_id = ?", (drive_id,)
     ).fetchone()
 
-    file_rows = sum(1 for _ in open(csv_path)) - 1  # subtract header
+    # Count data rows (subtract header and any comment lines)
+    with open(csv_path) as f:
+        file_rows = sum(1 for line in f if not line.startswith("#")) - 1
     if file_rows <= 0:
         return 0
 
@@ -109,7 +138,9 @@ def import_csv(db, csv_path):
     rows_inserted = 0
     skipped = 0
     with open(csv_path, newline="") as f:
-        reader = csv.DictReader(f)
+        # Skip comment lines before passing to DictReader
+        lines = (line for line in f if not line.startswith("#"))
+        reader = csv.DictReader(lines)
         for row in reader:
             ts = row.get("timestamp", "")
             try:
@@ -148,8 +179,8 @@ def import_csv(db, csv_path):
         print(f"  WARNING: skipped {skipped} corrupt rows in {filename}")
 
     db.execute(
-        "INSERT INTO drives (drive_id, filename, imported_at, row_count) VALUES (?, ?, ?, ?)",
-        (drive_id, filename, datetime.now().isoformat(), rows_inserted),
+        "INSERT INTO drives (drive_id, filename, imported_at, row_count, vin, bt_mac) VALUES (?, ?, ?, ?, ?, ?)",
+        (drive_id, filename, datetime.now().isoformat(), rows_inserted, vin, bt_mac),
     )
 
     return rows_inserted
