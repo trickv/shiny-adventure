@@ -3,6 +3,8 @@
 .logs/
 .beads/
 
+__pycache__/
+
 # Per-device config created by ./install
 bt-addr
 venv/
