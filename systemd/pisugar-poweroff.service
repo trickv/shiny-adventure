@@ -8,7 +8,7 @@ Requires=poweroff.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/home/trick/obd/pisugar-poweroff
+ExecStart=__HOME__/obd/venv/bin/python3 __HOME__/obd/pisugar-poweroff
 
 [Install]
 WantedBy=shutdown.target

@@ -2,13 +2,19 @@
 
 cd $(dirname $(realpath $0))
 
+OBD_USER="${SUDO_USER:-$(whoami)}"
+OBD_HOME=$(eval echo "~$OBD_USER")
+
 changed=0
 
 for unit in obd.service rtc-sync.service pisugar-poweroff.service; do
-    diff -u "$unit" "/etc/systemd/system/$unit" 2>/dev/null
-    if [ $? -ne 0 ]; then
+    # Substitute placeholders with actual user/home
+    rendered=$(sed "s|__HOME__|$OBD_HOME|g; s|__USER__|$OBD_USER|g" "$unit")
+
+    current=$(cat "/etc/systemd/system/$unit" 2>/dev/null)
+    if [ "$rendered" != "$current" ]; then
         echo "Installing $unit..."
-        sudo cp -pv "$unit" /etc/systemd/system/
+        echo "$rendered" | sudo tee "/etc/systemd/system/$unit" > /dev/null
         changed=1
     fi
 done

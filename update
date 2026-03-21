@@ -35,7 +35,7 @@ fi
 cd $HOME/obd
 
 # Pull with a timeout so a bad connection doesn't block forever
-if timeout 120 git pull -q https://github.com/trickv/obd-logger; then
+if timeout 120 git pull -q; then
     # Create venv if missing, and keep packages up to date
     [ -d venv ] || python3 -m venv venv
     venv/bin/pip install -q --upgrade obd smbus2

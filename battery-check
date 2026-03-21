@@ -1,4 +1,4 @@
-#!/home/trick/obd/venv/bin/python3
+#!/usr/bin/env python3
 
 """Shut down the Pi if PiSugar battery is critically low.
 
@@ -7,13 +7,14 @@ and not charging, initiates a system shutdown. The pisugar-poweroff
 systemd service handles telling the MCU to cut power.
 """
 
+import os
 import subprocess
 import sys
 from datetime import datetime
 from pisugar import PiSugar3
 
 SHUTDOWN_THRESHOLD = 20
-LOG = "/home/trick/log/battery.log"
+LOG = os.path.expanduser("~/log/battery.log")
 
 pisugar = PiSugar3()
 charging = pisugar.get_charging_status().value

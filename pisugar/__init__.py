@@ -1,4 +1,4 @@
-#!/home/trick/obd/venv/bin/python3
+#!/usr/bin/env python3
 
 # PiSugar3 direct I2C interface — no pisugar-server daemon required.
 #

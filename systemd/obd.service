@@ -3,9 +3,9 @@ Description=obd
 Documentation=https://github.com/trickv/obd-logger
 
 [Service]
-ExecStart=/home/trick/obd/onboot
-User=trick
-Group=trick
+ExecStart=__HOME__/obd/onboot
+User=__USER__
+Group=__USER__
 StandardOutput=journal
 Restart=always
 RestartSec=10

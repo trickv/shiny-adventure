@@ -3,6 +3,8 @@
 cd $HOME/obd
 mkdir -p $HOME/log
 
+export PATH="$HOME/obd/venv/bin:$PATH"
+
 sudo rfcomm bind rfcomm0 $(cat bt-addr)
 
 ./obd-logger 2>&1 | ts | tee -a $HOME/log/obd-$(date +%Y%m%d-%H%M%S).log | logger -t obd-logger
