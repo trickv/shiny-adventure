@@ -27,8 +27,14 @@ if [ ${#password} -lt 8 ]; then
 fi
 
 echo
-echo "Connecting to '$ssid' with password '$password'..."
+echo "Adding WiFi profile for '$ssid'..."
 
-nmcli device wifi connect "$ssid" password "$password"
+nmcli connection add \
+    type wifi \
+    con-name "$ssid" \
+    ssid "$ssid" \
+    wifi-sec.key-mgmt wpa-psk \
+    wifi-sec.psk "$password" \
+    connection.autoconnect yes
 
-echo "Done! Connected to '$ssid'."
+echo "Done! Profile '$ssid' saved. It will auto-connect when in range."
