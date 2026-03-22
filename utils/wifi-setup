@@ -27,8 +27,17 @@ if [ ${#password} -lt 8 ]; then
 fi
 
 echo
+echo "Scanning for WiFi networks..."
+nmcli device wifi rescan 2>/dev/null || true
+sleep 3
+
 echo "Connecting to '$ssid' with password '$password'..."
 
-nmcli device wifi connect "$ssid" password "$password"
+if ! nmcli device wifi connect "$ssid" password "$password"; then
+    echo
+    echo "Connection failed. Available networks:"
+    nmcli device wifi list
+    exit 1
+fi
 
 echo "Done! Connected to '$ssid'."
