@@ -1,0 +1,35 @@
+#!/bin/bash
+# Add a WPA-PSK WiFi network using nmcli.
+# Designed to be dead simple over SSH on a phone.
+
+set -euo pipefail
+
+echo "=== WiFi Setup ==="
+echo
+
+read -rp "WiFi network name (SSID): " ssid
+
+if [ -z "$ssid" ]; then
+    echo "Error: SSID cannot be empty."
+    exit 1
+fi
+
+read -rsp "WiFi password: " password
+echo
+
+if [ -z "$password" ]; then
+    echo "Error: Password cannot be empty."
+    exit 1
+fi
+
+if [ ${#password} -lt 8 ]; then
+    echo "Error: WPA password must be at least 8 characters."
+    exit 1
+fi
+
+echo
+echo "Adding WiFi network '$ssid'..."
+
+nmcli device wifi connect "$ssid" password "$password"
+
+echo "Done! Connected to '$ssid'."
