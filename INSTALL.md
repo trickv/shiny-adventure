@@ -18,7 +18,7 @@ Flash Raspberry Pi OS (Trixie) to an SD card using
 
 During imaging, configure:
 - Hostname (e.g. `sensorpi1`)
-- User: `trick`
+- User (any username works — e.g. `trick`, `pi`, etc.)
 - WiFi credentials
 - Enable SSH
 
@@ -172,8 +172,9 @@ python3 -m venv venv
 venv/bin/pip install obd smbus2
 ```
 
-All Python scripts have shebangs pointing at `~/obd/venv/bin/python3`, so the
-venv is used automatically — no need to activate it before running scripts.
+All Python scripts use `#!/usr/bin/env python3` shebangs, and the venv's `bin`
+directory is prepended to `PATH` by `onboot` and the crontab — so the venv
+python is used automatically without needing to activate it.
 
 ## 9. Pair the ELM327 Bluetooth adapter
 
@@ -203,31 +204,17 @@ exit
 
 The default PIN for most ELM327 adapters is `1234`.
 
-## 10. Configure sudo permissions
-
-`obd-logger` calls `sudo rfcomm`, `sudo shutdown`, etc. without a password.
-Add a sudoers rule:
-
-```bash
-sudo visudo -f /etc/sudoers.d/obd
-```
-
-Add:
-```
-trick ALL=(ALL) NOPASSWD: /usr/bin/rfcomm, /usr/sbin/shutdown
-```
-
-## 11. Install the systemd service
+## 10. Install the systemd service
 
 ```bash
 cd ~/obd
 ./systemd/install
 ```
 
-This copies `obd.service`, `rtc-sync.service`, and `pisugar-poweroff.service`
-to `/etc/systemd/system/`, reloads systemd, and enables all three.
+This renders the service templates with your username and home directory,
+copies them to `/etc/systemd/system/`, reloads systemd, and enables all three.
 
-## 12. Install the crontab
+## 11. Install the crontab
 
 ```bash
 crontab ~/obd/crontab
@@ -238,7 +225,7 @@ This sets up:
 - Every 1 minute: `post-to-hass` (report sensors to Home Assistant)
 - Every 1 minute: `battery-check` (shut down if battery <20% and not charging)
 
-## 13. Verify
+## 12. Verify
 
 ```bash
 # Check systemd service
@@ -256,7 +243,7 @@ sudo rfcomm bind rfcomm0 $(cat ~/obd/bt-addr)
 ls -l /dev/rfcomm0
 ```
 
-## 14. Reboot and go
+## 13. Reboot and go
 
 ```bash
 sudo reboot
@@ -275,7 +262,7 @@ On boot, the `obd` systemd service will:
 | `bt-addr` | ELM327 Bluetooth MAC address — update if your adapter differs |
 | `secret.sh` | Home Assistant API token (git-crypt encrypted) |
 | `crontab` | Cron schedule for CI and Home Assistant updates |
-| `systemd/obd.service` | Systemd unit — update `User`/`Group` if not using `trick` |
+| `systemd/obd.service` | Systemd unit template — `install` script fills in your username |
 | `systemd/rtc-sync.service` | Syncs system clock → DS3231 RTC after NTP sync |
 | `systemd/pisugar-poweroff.service` | Tells PiSugar MCU to cut power at shutdown |
 
