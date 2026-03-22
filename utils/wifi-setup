@@ -14,8 +14,7 @@ if [ -z "$ssid" ]; then
     exit 1
 fi
 
-read -rsp "WiFi password: " password
-echo
+read -rp "WiFi password: " password
 
 if [ -z "$password" ]; then
     echo "Error: Password cannot be empty."
@@ -28,7 +27,7 @@ if [ ${#password} -lt 8 ]; then
 fi
 
 echo
-echo "Adding WiFi network '$ssid'..."
+echo "Connecting to '$ssid' with password '$password'..."
 
 nmcli device wifi connect "$ssid" password "$password"
 
