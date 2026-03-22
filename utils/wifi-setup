@@ -27,17 +27,14 @@ if [ ${#password} -lt 8 ]; then
 fi
 
 echo
-echo "Scanning for WiFi networks..."
-nmcli device wifi rescan 2>/dev/null || true
-sleep 3
+echo "Adding WiFi profile for '$ssid'..."
 
-echo "Connecting to '$ssid' with password '$password'..."
+nmcli connection add \
+    type wifi \
+    con-name "$ssid" \
+    ssid "$ssid" \
+    wifi-sec.key-mgmt wpa-psk \
+    wifi-sec.psk "$password" \
+    connection.autoconnect yes
 
-if ! nmcli device wifi connect "$ssid" password "$password"; then
-    echo
-    echo "Connection failed. Available networks:"
-    nmcli device wifi list
-    exit 1
-fi
-
-echo "Done! Connected to '$ssid'."
+echo "Done! Profile '$ssid' saved. It will auto-connect when in range."
