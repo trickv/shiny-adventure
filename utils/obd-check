@@ -1,0 +1,60 @@
+#!/usr/bin/env -S python3 -u
+
+"""Quick OBD-II proof-of-life check.
+
+Connects to the ELM327 adapter over /dev/rfcomm0, queries a few
+basic values (VIN, RPM, battery voltage), and prints them.
+Intended as a fast sanity check after Bluetooth pairing.
+"""
+
+import sys
+import time
+
+import obd
+
+DEVICE = "/dev/rfcomm0"
+BAUDRATE = 38400
+MAX_ATTEMPTS = 10
+
+print(f"Connecting to {DEVICE} ...")
+
+connection = None
+for attempt in range(1, MAX_ATTEMPTS + 1):
+    print(f"  attempt {attempt}/{MAX_ATTEMPTS}")
+    connection = obd.OBD(DEVICE, baudrate=BAUDRATE)
+    if connection.status() != obd.OBDStatus.NOT_CONNECTED:
+        break
+    connection.close()
+    time.sleep(1)
+
+if connection.status() == obd.OBDStatus.NOT_CONNECTED:
+    print("Failed to connect. Is the adapter paired and rfcomm0 bound?")
+    sys.exit(1)
+
+print(f"Connected — status: {connection.status()}\n")
+
+# Queries to run: (command, label, format function)
+queries = [
+    (obd.commands.VIN,          "VIN"),
+    (obd.commands.RPM,          "Engine RPM"),
+    (obd.commands.ELM_VOLTAGE,  "Battery voltage"),
+    (obd.commands.ELM_VERSION,  "ELM version"),
+]
+
+for cmd, label in queries:
+    if cmd not in connection.supported_commands and cmd not in (
+        obd.commands.ELM_VOLTAGE, obd.commands.ELM_VERSION
+    ):
+        print(f"  {label}: not supported by this vehicle")
+        continue
+    resp = connection.query(cmd)
+    if resp.is_null():
+        val = "no response (ignition off?)"
+    else:
+        val = resp.value
+        if hasattr(val, 'magnitude'):
+            val = f"{val.magnitude} {val.units}"
+    print(f"  {label}: {val}")
+
+connection.close()
+print("\nDone.")

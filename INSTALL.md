@@ -178,8 +178,21 @@ python is used automatically without needing to activate it.
 
 ## 9. Pair the ELM327 Bluetooth adapter
 
+First make sure the bluetooth interface is unblocked. rfkill will show:
+```bash
+pi@obd:~ $ rfkill
+ID TYPE      DEVICE      SOFT      HARD
+ 0 bluetooth hci0     blocked unblocked
+ 1 wlan      phy0   unblocked unblocked
+```
+
+Unblock it:
+```bash
+sudo rfkill unblock bluetooth
+```
+
 Power on the ELM327 adapter (plug it into the car's OBD port and turn the
-ignition to ON).
+ignition to ON - although many cars maintain power to the OBD port even with ignition off which is sufficient for pairing).
 
 ```bash
 bluetoothctl
