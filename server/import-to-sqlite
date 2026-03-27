@@ -82,10 +82,10 @@ def init_db(db):
             row_count  INTEGER NOT NULL
         );
     """)
-    # Add vin and bt_mac columns if they don't exist yet (migration for existing DBs).
+    # Add device identification columns if they don't exist yet (migration for existing DBs).
     # Denormalized onto readings too so Grafana can filter by device without JOINs.
     for table in ("drives", "readings"):
-        for col in ("vin", "bt_mac"):
+        for col in ("vin", "bt_mac", "hostname", "wifi_mac"):
             try:
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
             except sqlite3.OperationalError:
@@ -118,10 +118,12 @@ def import_csv(db, csv_path):
     # drive_id is the filename without extension, e.g. "obd-20260306-164722-001DA50362B2"
     drive_id = os.path.splitext(filename)[0]
 
-    # Parse metadata comments at top of CSV (VIN, BT_MAC)
+    # Parse metadata comments at top of CSV
     metadata = parse_csv_metadata(csv_path)
     vin = metadata.get("VIN")
     bt_mac = metadata.get("BT_MAC")
+    hostname = metadata.get("HOSTNAME")
+    wifi_mac = metadata.get("WIFI_MAC")
 
     # Check if already imported
     existing = db.execute(
@@ -156,7 +158,8 @@ def import_csv(db, csv_path):
                 skipped += 1
                 continue
             values = {"drive_id": drive_id, "timestamp": ts, "time_unix": time_unix,
-                      "vin": vin, "bt_mac": bt_mac}
+                      "vin": vin, "bt_mac": bt_mac,
+                      "hostname": hostname, "wifi_mac": wifi_mac}
 
             for col in NUMERIC_COLUMNS:
                 raw = row.get(col, "")
@@ -187,8 +190,8 @@ def import_csv(db, csv_path):
         print(f"  WARNING: skipped {skipped} corrupt rows in {filename}")
 
     db.execute(
-        "INSERT INTO drives (drive_id, filename, imported_at, row_count, vin, bt_mac) VALUES (?, ?, ?, ?, ?, ?)",
-        (drive_id, filename, datetime.now().isoformat(), rows_inserted, vin, bt_mac),
+        "INSERT INTO drives (drive_id, filename, imported_at, row_count, vin, bt_mac, hostname, wifi_mac) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (drive_id, filename, datetime.now().isoformat(), rows_inserted, vin, bt_mac, hostname, wifi_mac),
     )
 
     return rows_inserted

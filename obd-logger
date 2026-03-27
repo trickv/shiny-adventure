@@ -4,6 +4,7 @@ import csv
 import json
 import os
 import os.path
+import socket
 import subprocess
 import sys
 import time
@@ -55,6 +56,20 @@ def read_bt_mac():
 def bt_mac_for_filename(mac):
     """Strip colons from a MAC address for use in filenames."""
     return mac.replace(":", "").upper()
+
+
+def get_hostname():
+    """Return the Pi's hostname."""
+    return socket.gethostname()
+
+
+def get_wifi_mac():
+    """Return the MAC address of the WiFi adapter (wlan0)."""
+    try:
+        with open("/sys/class/net/wlan0/address") as f:
+            return f.read().strip().upper()
+    except FileNotFoundError:
+        return "unknown"
 
 
 def query_vin(connection):
@@ -141,7 +156,10 @@ csv_file = None
 
 try:
     bt_mac = read_bt_mac()
-    log_event("startup", argv=sys.argv, pid=os.getpid(), bt_mac=bt_mac)
+    hostname = get_hostname()
+    wifi_mac = get_wifi_mac()
+    log_event("startup", argv=sys.argv, pid=os.getpid(),
+              bt_mac=bt_mac, hostname=hostname, wifi_mac=wifi_mac)
 
     pisugar = PiSugar3()
     log_event("pisugar_connected")
@@ -211,6 +229,8 @@ try:
     # Write metadata comment lines before the CSV header
     csv_file.write(f"# VIN: {vin}\n")
     csv_file.write(f"# BT_MAC: {bt_mac}\n")
+    csv_file.write(f"# HOSTNAME: {hostname}\n")
+    csv_file.write(f"# WIFI_MAC: {wifi_mac}\n")
     csv_columns = ["timestamp"] + [col for _, col in ALL_SENSORS] + ["mpg", "pisugar_charging", "pisugar_battery_pct", "poll_time_ms", "sensors_collected", "error_count"]
     csv_writer = csv.DictWriter(csv_file, fieldnames=csv_columns)
     csv_writer.writeheader()
