@@ -82,19 +82,57 @@ def init_db(db):
             row_count  INTEGER NOT NULL
         );
     """)
+    # Add device identification columns if they don't exist yet (migration for existing DBs).
+    # Denormalized onto readings too so Grafana can filter by device without JOINs.
+    for table in ("drives", "readings"):
+        for col in ("vin", "bt_mac", "hostname", "wifi_mac"):
+            try:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+    # Index for Grafana device filtering
+    try:
+        db.execute("CREATE INDEX IF NOT EXISTS idx_readings_bt_mac ON readings(bt_mac)")
+    except sqlite3.OperationalError:
+        pass
+
+
+def parse_csv_metadata(csv_path):
+    """Read # comment lines at the top of a CSV and return metadata dict."""
+    metadata = {}
+    with open(csv_path) as f:
+        for line in f:
+            if line.startswith("#"):
+                # Parse "# KEY: VALUE" lines
+                content = line.lstrip("#").strip()
+                if ": " in content:
+                    key, value = content.split(": ", 1)
+                    metadata[key.strip()] = value.strip()
+            else:
+                break
+    return metadata
 
 
 def import_csv(db, csv_path):
     filename = os.path.basename(csv_path)
-    # drive_id is the filename without extension, e.g. "obd-20260306-164722"
+    # drive_id is the filename without extension, e.g. "obd-20260306-164722-001DA50362B2"
     drive_id = os.path.splitext(filename)[0]
+
+    # Parse metadata comments at top of CSV
+    metadata = parse_csv_metadata(csv_path)
+    vin = metadata.get("VIN")
+    bt_mac = metadata.get("BT_MAC")
+    hostname = metadata.get("HOSTNAME")
+    wifi_mac = metadata.get("WIFI_MAC")
 
     # Check if already imported
     existing = db.execute(
         "SELECT row_count FROM drives WHERE drive_id = ?", (drive_id,)
     ).fetchone()
 
-    file_rows = sum(1 for _ in open(csv_path)) - 1  # subtract header
+    # Count data rows (subtract header and any comment lines)
+    with open(csv_path) as f:
+        file_rows = sum(1 for line in f if not line.startswith("#")) - 1
     if file_rows <= 0:
         return 0
 
@@ -110,7 +148,8 @@ def import_csv(db, csv_path):
     skipped = 0
     with open(csv_path, newline="", errors="replace") as f:
         # Strip NUL bytes from corrupt CSVs (filesystem corruption on unclean shutdown)
-        clean_lines = (line.replace("\x00", "") for line in f)
+        # and skip comment lines (metadata headers) before passing to DictReader
+        clean_lines = (line.replace("\x00", "") for line in f if not line.startswith("#"))
         reader = csv.DictReader(clean_lines)
         for row in reader:
             ts = row.get("timestamp", "")
@@ -119,7 +158,9 @@ def import_csv(db, csv_path):
             except (ValueError, TypeError):
                 skipped += 1
                 continue
-            values = {"drive_id": drive_id, "timestamp": ts, "time_unix": time_unix}
+            values = {"drive_id": drive_id, "timestamp": ts, "time_unix": time_unix,
+                      "vin": vin, "bt_mac": bt_mac,
+                      "hostname": hostname, "wifi_mac": wifi_mac}
 
             for col in NUMERIC_COLUMNS:
                 raw = row.get(col, "")
@@ -150,8 +191,8 @@ def import_csv(db, csv_path):
         print(f"  WARNING: skipped {skipped} corrupt rows in {filename}")
 
     db.execute(
-        "INSERT INTO drives (drive_id, filename, imported_at, row_count) VALUES (?, ?, ?, ?)",
-        (drive_id, filename, datetime.now().isoformat(), rows_inserted),
+        "INSERT INTO drives (drive_id, filename, imported_at, row_count, vin, bt_mac, hostname, wifi_mac) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (drive_id, filename, datetime.now().isoformat(), rows_inserted, vin, bt_mac, hostname, wifi_mac),
     )
 
     return rows_inserted

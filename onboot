@@ -5,6 +5,9 @@ mkdir -p $HOME/log
 
 export PATH="$HOME/obd/venv/bin:$PATH"
 
-sudo rfcomm bind rfcomm0 $(cat bt-addr)
+BT_MAC=$(cat bt-addr)
+MAC_SLUG=$(echo "$BT_MAC" | tr -d ':')
 
-./obd-logger 2>&1 | ts | tee -a $HOME/log/obd-$(date +%Y%m%d-%H%M%S).log | logger -t obd-logger
+sudo rfcomm bind rfcomm0 "$BT_MAC"
+
+./obd-logger 2>&1 | ts | tee -a $HOME/log/obd-$(date +%Y%m%d-%H%M%S)-${MAC_SLUG}.log | logger -t obd-logger

@@ -4,6 +4,7 @@ import csv
 import json
 import os
 import os.path
+import socket
 import subprocess
 import sys
 import time
@@ -38,6 +39,50 @@ ALL_SENSORS = ECU_SENSORS + ADAPTER_SENSORS
 
 LOG_DIR = os.path.expanduser("~/log")
 os.makedirs(LOG_DIR, exist_ok=True)
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def read_bt_mac():
+    """Read the Bluetooth MAC address of the ELM adapter from bt-addr file."""
+    bt_addr_path = os.path.join(SCRIPT_DIR, "bt-addr")
+    try:
+        with open(bt_addr_path) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return "unknown"
+
+
+def bt_mac_for_filename(mac):
+    """Strip colons from a MAC address for use in filenames."""
+    return mac.replace(":", "").upper()
+
+
+def get_hostname():
+    """Return the Pi's hostname."""
+    return socket.gethostname()
+
+
+def get_wifi_mac():
+    """Return the MAC address of the WiFi adapter (wlan0)."""
+    try:
+        with open("/sys/class/net/wlan0/address") as f:
+            return f.read().strip().upper()
+    except FileNotFoundError:
+        return "unknown"
+
+
+def query_vin(connection):
+    """Query the VIN from the vehicle. Returns the VIN string or a placeholder."""
+    try:
+        response = connection.query(obd.commands.VIN)
+        if not response.is_null() and response.value:
+            vin = str(response.value).strip()
+            if vin:
+                return vin
+    except Exception as e:
+        print(f"VIN query failed: {e}")
+    return "unknown"
 
 # Persistent event log — one append-only JSONL file that captures every
 # state transition, error, and operational event. Synced alongside the CSVs
@@ -110,7 +155,11 @@ def schedule_shutdown_if_needed():
 csv_file = None
 
 try:
-    log_event("startup", argv=sys.argv, pid=os.getpid())
+    bt_mac = read_bt_mac()
+    hostname = get_hostname()
+    wifi_mac = get_wifi_mac()
+    log_event("startup", argv=sys.argv, pid=os.getpid(),
+              bt_mac=bt_mac, hostname=hostname, wifi_mac=wifi_mac)
 
     pisugar = PiSugar3()
     log_event("pisugar_connected")
@@ -145,6 +194,9 @@ try:
     elm_version = str(response.value)
     log_event("elm_info", voltage=elm_voltage, version=elm_version)
 
+    vin = query_vin(connection)
+    log_event("vehicle_id", vin=vin, bt_mac=bt_mac)
+
     # Log which sensors the car supports
     supported = connection.supported_commands
     sensor_support = {}
@@ -171,12 +223,18 @@ try:
         log_event("shutdown_cancelled")
 
     # Set up CSV logging
-    csv_path = os.path.join(LOG_DIR, f"obd-{datetime.now():%Y%m%d-%H%M%S}.csv")
+    mac_slug = bt_mac_for_filename(bt_mac)
+    csv_path = os.path.join(LOG_DIR, f"obd-{datetime.now():%Y%m%d-%H%M%S}-{mac_slug}.csv")
     csv_file = open(csv_path, "w", newline="")
+    # Write metadata comment lines before the CSV header
+    csv_file.write(f"# VIN: {vin}\n")
+    csv_file.write(f"# BT_MAC: {bt_mac}\n")
+    csv_file.write(f"# HOSTNAME: {hostname}\n")
+    csv_file.write(f"# WIFI_MAC: {wifi_mac}\n")
     csv_columns = ["timestamp"] + [col for _, col in ALL_SENSORS] + ["mpg", "pisugar_charging", "pisugar_battery_pct", "poll_time_ms", "sensors_collected", "error_count"]
     csv_writer = csv.DictWriter(csv_file, fieldnames=csv_columns)
     csv_writer.writeheader()
-    log_event("csv_logging_started", path=csv_path)
+    log_event("csv_logging_started", path=csv_path, vin=vin, bt_mac=bt_mac)
 
     # Filter to only supported sensors
     active_ecu_sensors = [(cmd, col) for cmd, col in ECU_SENSORS if cmd in supported]

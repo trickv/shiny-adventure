@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+#
+# TODO: This sync mechanism needs a redesign for multi-user/multi-car.
+# Current approach uses plain rsync to a LAN server, which only works on
+# the home WiFi. Needs to work over the internet securely. Options:
+#   - SSH rsync (challenge: jumpbox requires two hops to reach Grafana server)
+#   - Tailscale/WireGuard VPN to make the Grafana server directly reachable
+#   - Cloud relay (S3, rclone to a bucket, etc.)
+#   - Push-based: Pi POSTs files to an HTTPS endpoint on the server
+# For now this still works for the single-user case on home WiFi.
 
 export RSYNC_PASSWORD=obd
 
