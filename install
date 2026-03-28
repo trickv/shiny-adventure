@@ -63,11 +63,9 @@ if [ "$skip_bt" -eq 0 ]; then
 
     # Power on Bluetooth and scan
     bluetoothctl power on >/dev/null 2>&1 || true
-    bluetoothctl agent on >/dev/null 2>&1 || true
-    bluetoothctl default-agent >/dev/null 2>&1 || true
 
-    # Scan in background for 15 seconds
-    timeout 15 bluetoothctl scan on >/dev/null 2>&1 || true
+    # Scan for 15 seconds
+    bluetoothctl --timeout 15 scan on >/dev/null 2>&1 || true
 
     # List discovered devices
     echo "Discovered devices:"
@@ -105,12 +103,18 @@ if [ "$skip_bt" -eq 0 ]; then
     echo "[3/6] Pairing with $BT_MAC..."
     echo "(Default PIN for most ELM327 adapters is 1234)"
 
-    bluetoothctl pair "$BT_MAC" || {
+    # Run agent, pair, and trust in a single bluetoothctl session so the
+    # agent is still registered when the PIN prompt arrives.
+    bluetoothctl <<BTEOF || {
+agent on
+default-agent
+pair $BT_MAC
+trust $BT_MAC
+BTEOF
         echo "Pairing failed. You may need to enter PIN 1234 when prompted."
         echo "Try running: bluetoothctl pair $BT_MAC"
         exit 1
     }
-    bluetoothctl trust "$BT_MAC"
     echo "Paired and trusted."
 
     # Save MAC
@@ -147,6 +151,7 @@ echo "Bound rfcomm0 to $BT_MAC"
 
 # Quick connection test using Python
 echo "Testing OBD connection (car ignition must be ON)..."
+set +e
 venv/bin/python3 -u -c "
 import obd
 import sys
@@ -201,6 +206,7 @@ print('OBD verification complete.')
 "
 
 verify_status=$?
+set -e
 sudo rfcomm release rfcomm0 2>/dev/null || true
 
 if [ $verify_status -ne 0 ]; then
