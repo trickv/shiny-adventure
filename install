@@ -103,14 +103,20 @@ if [ "$skip_bt" -eq 0 ]; then
     echo "[3/6] Pairing with $BT_MAC..."
     echo "(Default PIN for most ELM327 adapters is 1234)"
 
-    # Run agent, pair, and trust in a single bluetoothctl session so the
-    # agent is still registered when the PIN prompt arrives.
-    bluetoothctl <<BTEOF || {
-agent on
-default-agent
-pair $BT_MAC
-trust $BT_MAC
-BTEOF
+    # Feed commands with delays so each one completes before the next.
+    # All must run in a single bluetoothctl session so the agent is still
+    # registered when the PIN prompt arrives during pairing.
+    {
+        echo "agent on"
+        sleep 1
+        echo "default-agent"
+        sleep 1
+        echo "pair $BT_MAC"
+        sleep 10
+        echo "trust $BT_MAC"
+        sleep 2
+        echo "quit"
+    } | bluetoothctl || {
         echo "Pairing failed. You may need to enter PIN 1234 when prompted."
         echo "Try running: bluetoothctl pair $BT_MAC"
         exit 1
@@ -144,10 +150,28 @@ echo "Dependencies installed."
 echo ""
 echo "[5/6] Verifying OBD communication..."
 
-# Release any existing binding
+# Tear down any pre-existing rfcomm0 binding (e.g. from manual tinkering)
 sudo rfcomm release rfcomm0 2>/dev/null || true
+# If rfcomm0 still exists, force-release all bindings
+if [ -e /dev/rfcomm0 ]; then
+    sudo rfcomm release all 2>/dev/null || true
+    sleep 1
+fi
 sudo rfcomm bind rfcomm0 "$BT_MAC"
 echo "Bound rfcomm0 to $BT_MAC"
+
+# Wait for the device node to appear
+for i in $(seq 1 5); do
+    [ -e /dev/rfcomm0 ] && break
+    echo "Waiting for /dev/rfcomm0..."
+    sleep 1
+done
+if [ ! -e /dev/rfcomm0 ]; then
+    echo "ERROR: /dev/rfcomm0 did not appear after binding."
+    echo "The Bluetooth pairing may not have completed successfully."
+    sudo rfcomm release rfcomm0 2>/dev/null || true
+    exit 1
+fi
 
 # Quick connection test using Python
 echo "Testing OBD connection (car ignition must be ON)..."
