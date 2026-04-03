@@ -19,7 +19,7 @@ post_sensor() {
     local name="$1" friendly="$2" state="$3" extra="${4:-}"
     curl -s -X POST -H "Authorization: Bearer $hass_llac" \
        -H "Content-Type: application/json" \
-       -d "{\"state\": \"$state\", \"attributes\": {\"friendly_name\": \"$friendly\"$extra}}" \
+       -d "{\"state\": \"$state\", \"attributes\": {\"friendly_name\": \"${HOSTNAME} $friendly\"$extra}}" \
        "$HASS_URL/sensor.${HOSTNAME}_$name" > /dev/null
 }
 
