@@ -8,7 +8,8 @@
 #   3. Saves the MAC to bt-addr
 #   4. Creates the Python venv and installs dependencies
 #   5. Binds RFCOMM and verifies OBD communication
-#   6. Installs systemd services and crontab
+#   6. Installs and authenticates Tailscale (for data sync)
+#   7. Installs systemd services and crontab
 #
 # Prerequisites:
 #   - System packages from INSTALL.md step 2 are installed
@@ -27,7 +28,7 @@ echo ""
 
 # --- Step 1: Check prerequisites ---
 
-echo "[1/6] Checking prerequisites..."
+echo "[1/7] Checking prerequisites..."
 
 missing=()
 for cmd in bluetoothctl rfcomm python3 git; do
@@ -56,7 +57,7 @@ skip_bt=${skip_bt:-0}
 
 if [ "$skip_bt" -eq 0 ]; then
     echo ""
-    echo "[2/6] Scanning for Bluetooth devices..."
+    echo "[2/7] Scanning for Bluetooth devices..."
     echo "Make sure your ELM327 adapter is powered on (plugged into the car, ignition ON)."
     echo "Scanning for 15 seconds..."
     echo ""
@@ -100,7 +101,7 @@ if [ "$skip_bt" -eq 0 ]; then
 
     # --- Step 3: Pair and trust ---
 
-    echo "[3/6] Pairing with $BT_MAC..."
+    echo "[3/7] Pairing with $BT_MAC..."
     echo "(Default PIN for most ELM327 adapters is 1234)"
 
     # Feed commands with delays so each one completes before the next.
@@ -129,14 +130,14 @@ if [ "$skip_bt" -eq 0 ]; then
 else
     BT_MAC=$(cat bt-addr)
     echo ""
-    echo "[2/6] Skipping Bluetooth scan (using existing MAC: $BT_MAC)"
-    echo "[3/6] Skipping pairing (using existing MAC: $BT_MAC)"
+    echo "[2/7] Skipping Bluetooth scan (using existing MAC: $BT_MAC)"
+    echo "[3/7] Skipping pairing (using existing MAC: $BT_MAC)"
 fi
 
 # --- Step 4: Python venv ---
 
 echo ""
-echo "[4/6] Setting up Python virtual environment..."
+echo "[4/7] Setting up Python virtual environment..."
 
 if [ ! -d venv ]; then
     python3 -m venv venv
@@ -148,7 +149,7 @@ echo "Dependencies installed."
 # --- Step 5: Verify OBD communication ---
 
 echo ""
-echo "[5/6] Verifying OBD communication..."
+echo "[5/7] Verifying OBD communication..."
 
 # Tear down any pre-existing rfcomm0 binding (e.g. from manual tinkering)
 sudo rfcomm release rfcomm0 2>/dev/null || true
@@ -243,10 +244,47 @@ if [ $verify_status -ne 0 ]; then
     fi
 fi
 
-# --- Step 6: Install systemd services and crontab ---
+# --- Step 6: Install Tailscale ---
 
 echo ""
-echo "[6/6] Installing systemd services and crontab..."
+echo "[6/7] Setting up Tailscale (for data sync over the internet)..."
+
+if command -v tailscale &>/dev/null; then
+    echo "Tailscale is already installed."
+else
+    echo "Installing Tailscale..."
+    curl -fsSL https://tailscale.com/install.sh | sh
+fi
+
+# Check if already authenticated
+if tailscale status &>/dev/null; then
+    echo "Tailscale is already authenticated."
+    tailscale status | head -5
+else
+    echo ""
+    echo "Tailscale needs to be authenticated."
+    echo "Run: sudo tailscale up"
+    echo "Then follow the URL to log in and authorize this device."
+    echo ""
+    read -p "Press Enter after you've completed Tailscale authentication... "
+
+    if ! tailscale status &>/dev/null; then
+        echo "WARNING: Tailscale does not appear to be connected."
+        echo "Data sync will not work until Tailscale is authenticated."
+        echo "You can run 'sudo tailscale up' later to complete setup."
+    fi
+fi
+
+echo ""
+echo "IMPORTANT: To prevent this Pi from losing Tailscale access after 180 days,"
+echo "disable key expiry for this device in the Tailscale admin console:"
+echo "  https://login.tailscale.com/admin/machines"
+echo "Find this device and select 'Disable key expiry' from the menu."
+
+# --- Step 7: Install systemd services and crontab ---
+
+echo ""
+echo "[7/7] Installing systemd services and crontab..."
 
 mkdir -p ~/log
 

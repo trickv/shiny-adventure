@@ -144,8 +144,8 @@ def is_shutdown_pending():
 def schedule_shutdown_if_needed():
     subprocess.run(["./sync-data"])
     if not is_shutdown_pending():
-        log_event("shutdown_scheduled", delay_min=15)
-        subprocess.run(["sudo", "shutdown", "-h", "+15"])
+        log_event("shutdown_scheduled", delay_min=45)
+        subprocess.run(["sudo", "shutdown", "-h", "+45"])
     else:
         log_event("shutdown_already_pending")
 

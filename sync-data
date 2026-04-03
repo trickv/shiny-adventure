@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 #
-# TODO: This sync mechanism needs a redesign for multi-user/multi-car.
-# Current approach uses plain rsync to a LAN server, which only works on
-# the home WiFi. Needs to work over the internet securely. Options:
-#   - SSH rsync (challenge: jumpbox requires two hops to reach Grafana server)
-#   - Tailscale/WireGuard VPN to make the Grafana server directly reachable
-#   - Cloud relay (S3, rclone to a bucket, etc.)
-#   - Push-based: Pi POSTs files to an HTTPS endpoint on the server
-# For now this still works for the single-user case on home WiFi.
+# Sync logged data to the server via rsync over Tailscale.
+# The Pi and the server must both be on the same Tailscale network.
+# The rsync daemon runs on the server (port 8730).
+
+# Use Tailscale IP for litecoin so this works from any network.
+RSYNC_HOST="100.124.139.90"
+RSYNC_PORT="8730"
 
 export RSYNC_PASSWORD=obd
 
-rsync -av --partial $HOME/log rsync://obd@litecoin:8730/data
+rsync -av --partial $HOME/log rsync://obd@${RSYNC_HOST}:${RSYNC_PORT}/data
 touch $HOME/log/last-sync

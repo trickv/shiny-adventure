@@ -32,6 +32,11 @@ if ! ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
     exit 0
 fi
 
+# Ensure Tailscale is up (needed for sync-data)
+if command -v tailscale &>/dev/null; then
+    tailscale up --accept-routes 2>/dev/null || true
+fi
+
 cd $HOME/obd
 
 # Pull with a timeout so a bad connection doesn't block forever

@@ -9,7 +9,7 @@ Raspberry Pi running Raspberry Pi OS based on Debian Trixie (13).
 - [PiSugar3 battery module](https://www.pisugar.com/) attached to the Pi
 - ELM327 Bluetooth OBD-II adapter (any compatible adapter — the install script
   will scan and pair with it)
-- WiFi connectivity (for data sync; Home Assistant integration is optional)
+- WiFi connectivity (for data sync via Tailscale; Home Assistant integration is optional)
 
 ## 1. Base OS setup
 
@@ -44,12 +44,29 @@ Package purposes:
 - `git`, `git-crypt` — clone repo and decrypt `secret.sh`
 - `python3`, `python3-venv`, `python3-pip` — Python runtime and venv support
 - `moreutils` — provides the `ts` (timestamp) command used by `onboot`
-- `rsync` — log sync to remote server
+- `rsync` — log sync to remote server (via Tailscale)
 - `curl` — Home Assistant API calls
 - `wireless-tools` — provides `iwconfig` for WiFi ESSID reporting
 - `util-linux-extra` — provides `hwclock` for RTC sync
 
-## 3. Enable I2C (for PiSugar)
+## 3. Install Tailscale
+
+Tailscale creates a secure WireGuard tunnel between the Pi and the data
+server, so synced data works from any network (not just home WiFi).
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+Follow the printed URL to authenticate. Then disable key expiry for this
+device in the [Tailscale admin console](https://login.tailscale.com/admin/machines)
+so the Pi doesn't lose access after 180 days.
+
+The install script (step 8) will also check for Tailscale and prompt you
+if it's not set up yet.
+
+## 4. Enable I2C (for PiSugar)
 
 ```bash
 sudo raspi-config
@@ -59,7 +76,7 @@ Navigate to: **Interface Options → I2C → Yes**
 
 Reboot after enabling.
 
-## 4. PiSugar setup
+## 5. PiSugar setup
 
 The `pisugar/` module talks directly to the PiSugar3 over I2C (address 0x57)
 using `smbus2`. No pisugar-server daemon is needed.
@@ -71,9 +88,9 @@ sudo i2cdetect -y 1
 ```
 
 You should see devices at addresses `0x57` (PiSugar3 MCU) and `0x68` (DS3231 RTC).
-The `smbus2` package is installed in the venv (step 8).
+The `smbus2` package is installed in the venv (step 9).
 
-## 5. Configure the PiSugar RTC
+## 6. Configure the PiSugar RTC
 
 The PiSugar has an onboard RTC (real-time clock) that keeps time while the Pi
 is off. This is critical because the Pi is offline during drives — without the
@@ -128,11 +145,11 @@ RTC running for over a year.
 
 ### Automatic RTC sync after NTP
 
-The `rtc-sync.service` (installed in step 11) runs `hwclock --systohc` once
+The `rtc-sync.service` (installed in step 12) runs `hwclock --systohc` once
 after `systemd-timesyncd` synchronizes the clock. This keeps the RTC accurate
 whenever the Pi is online — no manual `hwclock -w` needed after initial setup.
 
-## 6. Clone the repository
+## 7. Clone the repository
 
 The systemd service and scripts expect the code at `$HOME/obd`:
 
@@ -142,7 +159,7 @@ git clone https://github.com/trickv/obd-logger obd
 cd obd
 ```
 
-## 7. Configure sudo permissions
+## 8. Configure sudo permissions
 
 `obd-logger` calls `sudo rfcomm`, `sudo shutdown`, etc. without a password.
 Add a sudoers rule (change `trick` to your username):
@@ -156,10 +173,10 @@ Add:
 trick ALL=(ALL) NOPASSWD: /usr/bin/rfcomm, /usr/sbin/shutdown
 ```
 
-## 8. Run the install script
+## 9. Run the install script
 
 The install script handles Bluetooth pairing, venv setup, OBD verification,
-systemd services, and crontab in one step.
+Tailscale authentication, systemd services, and crontab in one step.
 
 **Important:** The ELM327 adapter must be plugged into the car's OBD port
 and the ignition must be ON.
@@ -176,14 +193,15 @@ The script will:
    not checked into git)
 4. Create a Python venv and install dependencies
 5. Verify OBD communication (reads ELM version, voltage, VIN, and ECU data)
-6. Install systemd services and crontab
+6. Set up Tailscale (install if needed, prompt for authentication)
+7. Install systemd services and crontab
 
 The crontab sets up:
 - Every 1 minute: `update` script (git pull, update crontab, sync data — skips if last success was <15 min ago)
 - Every 1 minute: `post-to-hass` (report sensors to Home Assistant — skipped if `secret.sh` is not configured)
 - Every 1 minute: `battery-check` (shut down if battery <20% and not charging)
 
-## 9. (Optional) Home Assistant integration
+## 10. (Optional) Home Assistant integration
 
 The Home Assistant integration is optional and only used for debugging.
 If you want it, unlock `secret.sh` with git-crypt:
@@ -203,7 +221,7 @@ chmod 600 secret.sh
 
 If `secret.sh` is absent or not decrypted, `post-to-hass` exits silently.
 
-## 10. Verify
+## 11. Verify
 
 ```bash
 # Check systemd service
@@ -217,7 +235,7 @@ cd ~/obd
 ./battery.py
 ```
 
-## 11. Reboot and go
+## 12. Reboot and go
 
 ```bash
 sudo reboot
