@@ -184,8 +184,7 @@ try:
         charging = pisugar.get_charging_status().value
         log_event("no_connection", pisugar_charging=charging)
         if not charging:
-            log_event("shutdown_no_power")
-            subprocess.run(["sudo", "shutdown", "-h", "now"])
+            schedule_shutdown_if_needed()
         sys.exit(1)
 
     response = connection.query(obd.commands.ELM_VOLTAGE)
